@@ -1,0 +1,11 @@
+.venv/
+venv/
+*.o
+*.lis
+*.map
+*.sym
+*.zx0
+*.zts
+*.ztp
+*.ztm
+*.bin
