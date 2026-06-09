@@ -1,5 +1,9 @@
 ; jetski - Z80 asm code for the main game loop
 	include "zvb_hardware_h.asm"
+	include "zos_sys.asm"
+	include "zos_err.asm"
+	include "zos_keyboard.asm"
+	include "zos_video.asm"
 
 	org 0x4000
 
@@ -193,9 +197,21 @@ GameLoop:
 	; Wait for the next frame
 	CALL wait_end_vblank
 
+	CALL ReadKeyboard
+
 	JP GameLoop
 
-	ret
+QuitGame:
+	LD	A,VID_MODE_TEXT_640
+	OUT	(IO_CTRL_VID_MODE),A
+
+	LD H,DEV_STDOUT
+	LD C,CMD_RESET_SCREEN
+	LD DE,0
+	IOCTL
+
+	LD H,0
+	EXIT
 
     ; Wait for the FPGA to be initialized, read the status register and wait for VBlank
 wait_for_vblank:
@@ -344,6 +360,34 @@ ResetShore:
 
 	RET
 
+; void plotLine(int x0, int y0, int x1, int y1)
+; {
+;    int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
+;    int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1; 
+;    int err = dx+dy, e2; /* error value e_xy */
+ 
+;    for(;;){  /* loop */
+;       setPixel(x0,y0);
+;       if (x0==x1 && y0==y1) break;
+;       e2 = 2*err;
+;       if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
+;       if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
+;    }
+; }
+
+; void plotCircle(int xm, int ym, int r)
+; {
+;    int x = -r, y = 0, err = 2-2*r; /* II. Quadrant */ 
+;    do {
+;       setPixel(xm-x, ym+y); /*   I. Quadrant */
+;       setPixel(xm-y, ym-x); /*  II. Quadrant */
+;       setPixel(xm+x, ym-y); /* III. Quadrant */
+;       setPixel(xm+y, ym+x); /*  IV. Quadrant */
+;       r = err;
+;       if (r <= y) err += ++y*2+1;           /* e_xy+e_y < 0 */
+;       if (r > x || err > y) err += ++x*2+1; /* e_xy+e_x > 0 or no 2nd y-step */
+;    } while (x < 0);
+; }
 
 CopySprite:	; Copy the sprite at DE to the next available sprite entry
 	PUSH DE
@@ -416,9 +460,90 @@ PrintDigit:
 	LD (Cursor),DE
 	RET
 
+ReadKeyboard:
+	LD DE,keyboard_buffer
+	LD BC,16
+	S_READ1 DEV_STDIN
+
+	OR A	; Check for err success=0
+	JR NZ,ReadKeyboardError
+
+	LD B,C	; Number of characters in B
+	LD A,B
+	OR A
+	RET Z	; No keyboard input
+ReadKeyboardLoop:
+	LD HL,keyboard_buffer
+	LD A,(HL)
+	CP KB_ESC
+	CALL Z,HandleEsc
+	CP KB_UP_ARROW
+	CALL Z,HandleUp
+	CP KB_DOWN_ARROW
+	CALL Z,HandleDown
+	CP KB_LEFT_ARROW
+	CALL Z,HandleLeft
+	CP KB_RIGHT_ARROW
+	CALL Z,HandleRight
+	CP KB_KEY_SPACE
+	CALL Z,HandleSpace
+	CP KB_KEY_ENTER
+	CALL Z,HandleEnter
+	; Handle other keys here
+	INC HL
+	DJNZ ReadKeyboardLoop
+	RET
+
+ReadKeyboardError:
+	LD DE,keyboard_error_message
+	LD BC,keyboard_error_message_len
+	S_WRITE1 DEV_STDOUT
+
+	RET
+
+HandleEsc:
+	; Handle escape key press by quitting the game.
+	JP QuitGame
+HandleLeft:
+	LD A,-1	; 0xff in 8-bit signed is -1
+	LD (Steer),A
+	RET
+HandleRight:
+	LD A,1
+	LD (Steer),A
+	RET
+HandleUp:
+	LD A,1
+	LD (Throttle),A
+	RET
+HandleDown:
+	LD A,-1
+	LD (Throttle),A
+	RET
+HandleSpace:
+	; Handle space key press by accelerating the jetski.
+	LD A,1
+	LD (Throttle),A
+	RET
+HandleEnter:
+	; Handle enter key press by resetting the game or performing another action.
+	RET
+
+Steer:
+	DEFB 0
+Throttle:
+	DEFB 0
+
+keyboard_error_message:
+	DB "Error reading keyboard", 13, 10
+keyboard_error_message_len EQU $-keyboard_error_message
+
    ; Include the DZX0 decompression routine
 
 	include "dzx0_standard.asm"
+
+keyboard_buffer:
+    DS 16
 
 Frame:
 	DEFB 0
@@ -444,20 +569,6 @@ Cursor:
 
 NextSpriteEntry:
 	DEFW	0
-Player0:	; Made of 2x2 grid of 16x16 sprites
-	DEFW	144	; Y position
-	DEFW	64	; X position
-	DEFB	32	; Tile number
-	DEFB	flag_behind_fg | flag_flip_x	; Flag
-	DEFB	0	; Padding
-	DEFB	0	; Padding
-Player1:	; Made of 2x2 grid of 16x16 sprites
-	DEFW	144	; Y position
-	DEFW	320-64	; X position
-	DEFB	72	; Tile number
-	DEFB	flag_behind_fg 	; Flag
-	DEFB	0	; Padding
-	DEFB	0	; Padding
 
 SpriteTileMap:
 	defw TileMapShore
