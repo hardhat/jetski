@@ -9,3 +9,5 @@ venv/
 *.ztp
 *.ztm
 *.bin
+__pycache__/
+*.pyc

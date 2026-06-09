@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Jetski Course Editor</title>
+<style>
+:root {
+  --bg:       #0d1117;
+  --panel:    #161b22;
+  --border:   #30363d;
+  --accent:   #58a6ff;
+  --danger:   #f85149;
+  --text:     #c9d1d9;
+  --muted:    #8b949e;
+  --ibg:      #0d1117;
+  --bbg:      #21262d;
+  --bhov:     #30363d;
+  --sel:      #1f6feb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 12px/1.4 'Consolas','Courier New',monospace;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────── */
+#topbar {
+  background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 5px 12px; display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0; height: 36px;
+}
+#topbar h1 { font-size: 13px; color: var(--accent); margin-right: auto; }
+#save-status { font-size: 11px; color: var(--muted); }
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+#main { flex: 1; display: flex; overflow: hidden; }
+
+.panel {
+  background: var(--panel); display: flex; flex-direction: column; overflow: hidden;
+}
+#left-panel  { width: 190px; border-right: 1px solid var(--border); }
+#right-panel { width: 280px; border-left:  1px solid var(--border); }
+
+.ph { /* panel header */
+  padding: 5px 10px; font-size: 10px; font-weight: bold;
+  text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pb { flex: 1; overflow-y: auto; } /* panel body */
+.pf { padding: 7px; border-top: 1px solid var(--border); flex-shrink: 0; }
+
+/* ── Canvas ───────────────────────────────────────────────────────── */
+#canvas-wrap {
+  flex: 1; position: relative; overflow: hidden; background: #07090f;
+}
+#canvas { position: absolute; top: 0; left: 0; }
+#cam-toolbar {
+  position: absolute; top: 8px; right: 8px;
+  display: flex; flex-direction: column; gap: 4px; z-index: 10;
+}
+#status {
+  position: absolute; bottom: 8px; left: 8px;
+  font-size: 11px; color: var(--muted); pointer-events: none;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+button {
+  background: var(--bbg); color: var(--text); border: 1px solid var(--border);
+  padding: 4px 8px; cursor: pointer; font: inherit; border-radius: 4px;
+}
+button:hover:not(:disabled) { background: var(--bhov); }
+button.primary { background: var(--sel); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: #2879f7; }
+button.danger  { border-color: var(--danger); color: var(--danger); }
+button:disabled { opacity: 0.38; cursor: default; }
+button.sm { padding: 2px 5px; font-size: 10px; }
+
+/* ── Inputs ──────────────────────────────────────────────────────── */
+input[type=text],input[type=number],select {
+  background: var(--ibg); color: var(--text);
+  border: 1px solid var(--border); padding: 3px 6px;
+  font: inherit; border-radius: 3px; width: 100%;
+}
+input[type=range] { width: 100%; accent-color: var(--accent); }
+
+/* ── Course list ─────────────────────────────────────────────────── */
+.course-item {
+  padding: 6px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.course-item:hover { background: var(--bbg); }
+.course-item.active { background: var(--sel); color: #fff; }
+.course-item.active button { color: #fff; border-color: rgba(255,255,255,0.4); }
+
+/* ── Segment list ────────────────────────────────────────────────── */
+.seg-item {
+  display: flex; align-items: center; padding: 3px 6px;
+  border-bottom: 1px solid var(--border); cursor: pointer; gap: 3px;
+}
+.seg-item:hover { background: var(--bbg); }
+.seg-item.active { background: var(--sel); }
+.seg-idx { color: var(--muted); min-width: 20px; font-size: 10px; text-align: right; }
+.seg-info { flex: 1; font-size: 10px; overflow: hidden; white-space: nowrap; padding: 0 4px; }
+.seg-btns { display: flex; gap: 1px; flex-shrink: 0; }
+
+/* ── Badges ──────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block; padding: 0 3px; border-radius: 2px;
+  font-size: 9px; font-weight: bold; margin-left: 2px; vertical-align: middle;
+}
+.b-ramp  { background: #e67e22; color:#fff; }
+.b-obs   { background: #e74c3c; color:#fff; }
+.b-slow  { background: #8e44ad; color:#fff; }
+.b-shore { background: #27ae60; color:#fff; }
+
+/* ── Property rows ───────────────────────────────────────────────── */
+.pr { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.pr label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+.pr-inline {
+  padding: 5px 10px; display: flex; align-items: center;
+  justify-content: space-between; border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.pr-inline label { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.curve-row { display: flex; gap: 6px; align-items: center; }
+.curve-row input[type=number] { width: 56px; flex-shrink: 0; }
+
+/* ── Difficulty selector ─────────────────────────────────────────── */
+.diff-row { display: flex; gap: 3px; }
+.diff-btn { flex: 1; padding: 2px; text-align: center; font-size: 11px; }
+.diff-btn.on { background: var(--accent); border-color: var(--accent); color: #000; }
+
+/* ── Modal ───────────────────────────────────────────────────────── */
+#modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+#modal-bg.hidden { display: none; }
+#modal {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 20px; width: 320px;
+}
+#modal h2 { margin-bottom: 14px; color: var(--accent); font-size: 14px; }
+.mr { margin-bottom: 10px; }
+.mr label { display: block; color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+.m-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+#modal-err { color: var(--danger); font-size: 10px; margin-top: 6px; min-height: 14px; }
+
+.empty { color: var(--muted); text-align: center; padding: 14px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⛵ Jetski Course Editor</h1>
+  <span id="save-status"></span>
+  <button id="btn-save" class="primary" disabled>Save (Ctrl+S)</button>
+</div>
+
+<div id="main">
+
+  <!-- LEFT: Course list -->
+  <div class="panel" id="left-panel">
+    <div class="ph">Courses</div>
+    <div class="pb" id="course-list"></div>
+    <div class="pf">
+      <button id="btn-new" style="width:100%">+ New Course</button>
+    </div>
+  </div>
+
+  <!-- CENTER: Canvas -->
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <div id="cam-toolbar">
+      <button id="btn-zi" title="Zoom In">+</button>
+      <button id="btn-zo" title="Zoom Out">−</button>
+      <button id="btn-fit" title="Fit view">⊡</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <!-- RIGHT: Properties -->
+  <div class="panel" id="right-panel">
+    <div class="ph">Course</div>
+    <div id="course-props"><div class="empty">No course loaded</div></div>
+
+    <div class="ph" id="seg-header">
+      <span>Segments</span>
+      <button class="sm" id="btn-add-seg" disabled>+ Add</button>
+    </div>
+    <div class="pb" id="seg-list" style="flex:1;min-height:0"></div>
+
+    <div class="ph">Selected Segment</div>
+    <div id="seg-props" style="overflow-y:auto;max-height:300px">
+      <div class="empty">Click a segment</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- New course modal -->
+<div id="modal-bg" class="hidden">
+  <div id="modal">
+    <h2>New Course</h2>
+    <div class="mr">
+      <label>Name (letters, digits, dash, underscore)</label>
+      <input type="text" id="mn" placeholder="tropical-lagoon" maxlength="64">
+    </div>
+    <div class="mr">
+      <label>Difficulty (1–5)</label>
+      <input type="number" id="md" min="1" max="5" value="1" style="width:80px">
+    </div>
+    <div id="modal-err"></div>
+    <div class="m-btns">
+      <button id="m-cancel">Cancel</button>
+      <button id="m-create" class="primary">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Constants ────────────────────────────────────────────────────────────
+const BASE_S   = 0.05;   // px per world unit (cm) at zoom=1
+const TRACK_HW = 800;    // track half-width (cm) — visual only
+const EDGE_W   = 50;     // edge stripe width (cm) — visual only
+
+const FLAGS = [
+  { bit:0x01, label:'HAS_RAMP',       abbr:'RMP', cls:'b-ramp'  },
+  { bit:0x02, label:'HAS_OBSTACLE_L', abbr:'OBL', cls:'b-obs'   },
+  { bit:0x04, label:'HAS_OBSTACLE_R', abbr:'OBR', cls:'b-obs'   },
+  { bit:0x08, label:'SLOWZONE',       abbr:'SLO', cls:'b-slow'  },
+  { bit:0x10, label:'SHORE_L',        abbr:'SHL', cls:'b-shore' },
+  { bit:0x20, label:'SHORE_R',        abbr:'SHR', cls:'b-shore' },
+];
+
+// ── State ────────────────────────────────────────────────────────────────
+let courseNames = [];
+let course      = null;   // { name, difficulty, segments[] }
+let savedName   = null;   // name that lives on disk (for rename/delete of old)
+let selSeg      = -1;
+let dirty       = false;
+
+let camX = 0, camY = 0, zoom = 1.5;
+let worldPath = [];  // [{x,y,segIdx}] in world (cm), y-up
+
+// ── Canvas setup ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const w = canvas.parentElement;
+  canvas.width  = w.clientWidth;
+  canvas.height = w.clientHeight;
+  draw();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function w2s(wx, wy) { // world → screen
+  const s = BASE_S * zoom;
+  return [
+    canvas.width  / 2 + (wx - camX) * s,
+    canvas.height / 2 - (wy - camY) * s,  // y-flip
+  ];
+}
+function s2w(sx, sy) { // screen → world
+  const s = BASE_S * zoom;
+  return [
+    camX + (sx - canvas.width  / 2) / s,
+    camY - (sy - canvas.height / 2) / s,
+  ];
+}
+
+// ── Path builder ──────────────────────────────────────────────────────────
+// Integrates segment curvatures into a 2-D world-space polyline.
+// World: x = east, y = north (y-up). Heading 0 = east, π/2 = north.
+function buildPath(segs) {
+  const pts = [{ x: 0, y: 0, segIdx: -1 }];
+  let x = 0, y = 0, h = Math.PI / 2; // start heading north
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+    // curve is radian×32 total over the segment (not per metre)
+    const dh    = seg.curve / 32;
+    const steps = Math.max(3, Math.ceil(seg.length / 30));
+    const sl    = seg.length / steps;
+    const dhs   = dh / steps;
+    for (let j = 0; j < steps; j++) {
+      x += Math.cos(h) * sl;
+      y += Math.sin(h) * sl;
+      h += dhs;
+      pts.push({ x, y, segIdx: i });
+    }
+  }
+  return pts;
+}
+
+// ── Drawing ───────────────────────────────────────────────────────────────
+// Segment fill colours
+function segFill(seg, sel) {
+  if (sel)            return 'rgba(241,196,15,0.65)';
+  if (seg.flags&0x08) return 'rgba(142,68,173,0.55)';  // slowzone
+  if (seg.flags&0x01) return 'rgba(230,126,34,0.55)';  // ramp
+  if (seg.flags&0x06) return 'rgba(231,76,60,0.55)';   // obstacle
+  return 'rgba(20,100,180,0.55)';
+}
+function segStroke(seg, sel) {
+  if (sel)            return 'rgba(241,196,15,1)';
+  if (seg.flags&0x08) return 'rgba(160,80,200,0.9)';
+  if (seg.flags&0x01) return 'rgba(230,150,20,0.9)';
+  if (seg.flags&0x06) return 'rgba(231,76,60,0.9)';
+  return 'rgba(60,160,240,0.85)';
+}
+
+// Build per-segment world-space offset edges (L = left from rider, R = right).
+// Normals computed in world space (y-up) so L/R are correctly oriented.
+function edgePoints(wpts) {
+  const L = [], R = [];
+  const n = wpts.length;
+  for (let j = 0; j < n; j++) {
+    let dx, dy;
+    if      (j === 0)   { dx = wpts[1].x - wpts[0].x;       dy = wpts[1].y - wpts[0].y; }
+    else if (j === n-1) { dx = wpts[n-1].x - wpts[n-2].x;   dy = wpts[n-1].y - wpts[n-2].y; }
+    else                { dx = wpts[j+1].x - wpts[j-1].x;   dy = wpts[j+1].y - wpts[j-1].y; }
+    const d = Math.hypot(dx, dy) || 1;
+    // Left normal in world (y-up): rotate 90° CCW = (−dy, dx)
+    const nx = -dy / d, ny = dx / d;
+    L.push({ x: wpts[j].x + nx*TRACK_HW, y: wpts[j].y + ny*TRACK_HW });
+    R.push({ x: wpts[j].x - nx*TRACK_HW, y: wpts[j].y - ny*TRACK_HW });
+  }
+  return { L, R };
+}
+
+function polyPath(pts) { // pts = [{x,y}] world coords
+  if (pts.length < 2) return;
+  ctx.moveTo(...w2s(pts[0].x, pts[0].y));
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(...w2s(pts[i].x, pts[i].y));
+}
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#07090f';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!course) {
+    ctx.fillStyle = '#30363d'; ctx.font = '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load or create a course', W/2, H/2);
+    ctx.textAlign = 'left';
+    return;
+  }
+  if (course.segments.length === 0) {
+    ctx.fillStyle = '#30363d'; ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No segments — use + Add in the right panel', W/2, H/2);
+    ctx.textAlign = 'left';
+    return;
+  }
+
+  // Group path points by segment index
+  const bySegW = {}; // segIdx → [{x,y}] world
+  for (const pt of worldPath) {
+    if (pt.segIdx < 0) continue;
+    (bySegW[pt.segIdx] ??= []).push({ x: pt.x, y: pt.y });
+  }
+
+  const EWpx = Math.max(1.5, EDGE_W * BASE_S * zoom);
+  const CWpx = Math.max(0.5, 0.5 * BASE_S * zoom); // centre dash
+
+  for (let i = 0; i < course.segments.length; i++) {
+    const wpts = bySegW[i];
+    if (!wpts || wpts.length < 2) continue;
+    const seg = course.segments[i];
+    const sel = i === selSeg;
+    const { L, R } = edgePoints(wpts);
+
+    // Track fill polygon
+    ctx.beginPath();
+    ctx.moveTo(...w2s(L[0].x, L[0].y));
+    for (let j = 1; j < L.length; j++) ctx.lineTo(...w2s(L[j].x, L[j].y));
+    for (let j = R.length-1; j >= 0; j--) ctx.lineTo(...w2s(R[j].x, R[j].y));
+    ctx.closePath();
+    ctx.fillStyle = segFill(seg, sel);
+    ctx.fill();
+
+    // Centre dashed line
+    ctx.beginPath();
+    polyPath(wpts);
+    ctx.strokeStyle = sel ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = CWpx;
+    ctx.setLineDash([4 * BASE_S * zoom, 4 * BASE_S * zoom]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Left edge  (SHORE_L → green)
+    ctx.beginPath();
+    polyPath(L);
+    ctx.strokeStyle = (seg.flags & 0x10) ? '#2ecc71' : 'rgba(220,235,255,0.75)';
+    ctx.lineWidth = EWpx;
+    ctx.stroke();
+
+    // Right edge (SHORE_R → green)
+    ctx.beginPath();
+    polyPath(R);
+    ctx.strokeStyle = (seg.flags & 0x20) ? '#2ecc71' : 'rgba(220,235,255,0.75)';
+    ctx.lineWidth = EWpx;
+    ctx.stroke();
+
+    // Outer stroke for selected
+    if (sel) {
+      ctx.beginPath();
+      ctx.moveTo(...w2s(L[0].x, L[0].y));
+      for (let j = 1; j < L.length; j++) ctx.lineTo(...w2s(L[j].x, L[j].y));
+      for (let j = R.length-1; j >= 0; j--) ctx.lineTo(...w2s(R[j].x, R[j].y));
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(241,196,15,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Segment number label at midpoint
+    if (zoom > 0.5) {
+      const mid = wpts[Math.floor(wpts.length / 2)];
+      const [sx, sy] = w2s(mid.x, mid.y);
+      const fs = Math.max(9, Math.min(13, zoom * 6));
+      ctx.font = `bold ${fs}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = sel ? '#000' : 'rgba(255,255,255,0.6)';
+      ctx.fillText(`${i+1}`, sx, sy + fs * 0.35);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  // Start marker
+  const [sx0, sy0] = w2s(0, 0);
+  ctx.beginPath();
+  ctx.arc(sx0, sy0, Math.max(5, 8*zoom*BASE_S*20), 0, Math.PI*2);
+  ctx.fillStyle = '#2ecc71';
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = `bold ${Math.max(8,10)}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText('S', sx0, sy0 + 4);
+  ctx.textAlign = 'left';
+
+  // Status
+  document.getElementById('status').textContent =
+    `zoom ${zoom.toFixed(2)}×  |  ${course.segments.length} seg  |  ${totalLength()}m total`;
+}
+
+// ── Fit view ──────────────────────────────────────────────────────────────
+function fitView() {
+  if (!worldPath.length) return;
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  for (const p of worldPath) {
+    x0=Math.min(x0,p.x); x1=Math.max(x1,p.x);
+    y0=Math.min(y0,p.y); y1=Math.max(y1,p.y);
+  }
+  camX = (x0+x1)/2; camY = (y0+y1)/2;
+  const pad = TRACK_HW * 3;
+  const rx = canvas.width  / (BASE_S * ((x1-x0)||1) + pad*2*BASE_S);
+  const ry = canvas.height / (BASE_S * ((y1-y0)||1) + pad*2*BASE_S);
+  zoom = Math.max(0.1, Math.min(20, Math.min(rx,ry) * 0.85));
+  draw();
+}
+
+// ── Camera interaction ────────────────────────────────────────────────────
+let drag=false, dragBtn=0, dragX=0, dragY=0;
+
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    // Left click: try to select segment, else start pan
+    const [wx, wy] = s2w(e.offsetX, e.offsetY);
+    let bestD=Infinity, bestI=-1;
+    for (const pt of worldPath) {
+      if (pt.segIdx < 0) continue;
+      const d = Math.hypot(pt.x-wx, pt.y-wy);
+      if (d < bestD) { bestD=d; bestI=pt.segIdx; }
+    }
+    if (bestD < TRACK_HW * 1.8) {
+      selectSeg(bestI);
+    } else {
+      selectSeg(-1);
+      drag=true; dragBtn=0; dragX=e.clientX; dragY=e.clientY;
+    }
+  } else {
+    drag=true; dragBtn=e.button; dragX=e.clientX; dragY=e.clientY;
+  }
+});
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  const s = BASE_S * zoom;
+  camX -= (e.clientX - dragX) / s;
+  camY += (e.clientY - dragY) / s;
+  dragX=e.clientX; dragY=e.clientY;
+  draw();
+});
+window.addEventListener('mouseup', () => drag=false);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const [wx0,wy0] = s2w(e.offsetX, e.offsetY);
+  zoom *= e.deltaY < 0 ? 1.15 : 1/1.15;
+  zoom = Math.max(0.08, Math.min(30, zoom));
+  const [wx1,wy1] = s2w(e.offsetX, e.offsetY);
+  camX += wx0-wx1; camY += wy0-wy1;
+  draw();
+}, { passive: false });
+
+document.getElementById('btn-zi').onclick  = () => { zoom=Math.min(30,zoom*1.3); draw(); };
+document.getElementById('btn-zo').onclick  = () => { zoom=Math.max(0.08,zoom/1.3); draw(); };
+document.getElementById('btn-fit').onclick = fitView;
+
+// ── API ───────────────────────────────────────────────────────────────────
+async function api(method, url, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (r.status === 204) return null;
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(d.detail || r.statusText);
+  }
+  return r.json();
+}
+
+async function loadList() {
+  courseNames = await api('GET', '/courses/').catch(() => []);
+  renderCourseList();
+}
+
+async function loadCourse(name) {
+  try {
+    course    = await api('GET', `/courses/${enc(name)}`);
+    savedName = name;
+    selSeg    = -1;
+    dirty     = false;
+    worldPath = buildPath(course.segments);
+    renderAll();
+    fitView();
+    setDirty(false);
+  } catch(e) { alert('Load failed: ' + e.message); }
+}
+
+async function saveCourse() {
+  if (!course) return;
+  try {
+    await api('PUT', `/courses/${enc(savedName)}`, course);
+    savedName = course.name;
+    dirty     = false;
+    await loadList();
+    setDirty(false);
+    flash('Saved ✓');
+  } catch(e) { alert('Save failed: ' + e.message); }
+}
+
+async function deleteCourse(name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  try {
+    await api('DELETE', `/courses/${enc(name)}`);
+    if (savedName === name) {
+      course=null; savedName=null; selSeg=-1; dirty=false; worldPath=[];
+      renderAll(); setDirty(false);
+    }
+    await loadList();
+  } catch(e) { alert('Delete failed: ' + e.message); }
+}
+
+async function createCourse() {
+  const name = document.getElementById('mn').value.replace(/[^a-zA-Z0-9\-_]/g,'');
+  const diff = parseInt(document.getElementById('md').value)||1;
+  const err  = document.getElementById('modal-err');
+  if (!name) { err.textContent='Name must use letters, digits, - or _'; return; }
+  if (diff<1||diff>5) { err.textContent='Difficulty must be 1–5'; return; }
+  try {
+    await api('POST','/courses/',{name,difficulty:diff,segments:[]});
+    document.getElementById('modal-bg').classList.add('hidden');
+    await loadList();
+    await loadCourse(name);
+  } catch(e) { err.textContent=e.message; }
+}
+
+const enc = n => encodeURIComponent(n);
+
+// ── Dirty / save status ───────────────────────────────────────────────────
+function markDirty() {
+  dirty=true;
+  setDirty(true);
+  worldPath = buildPath(course.segments);
+  draw();
+}
+function setDirty(v) {
+  document.getElementById('btn-save').disabled = !v;
+  document.getElementById('save-status').textContent = v ? '● Unsaved changes' : '';
+}
+function flash(msg) {
+  document.getElementById('save-status').textContent = msg;
+  setTimeout(() => {
+    document.getElementById('save-status').textContent = dirty ? '● Unsaved changes' : '';
+  }, 2000);
+}
+
+// ── Segment operations ────────────────────────────────────────────────────
+function selectSeg(i) {
+  selSeg = i;
+  renderSegList();
+  renderSegProps();
+  draw();
+  if (i >= 0) {
+    document.querySelector(`.seg-item[data-i="${i}"]`)?.scrollIntoView({block:'nearest'});
+  }
+}
+
+function addSeg(afterIdx) {
+  if (!course) return;
+  const ns = { curve:0, length:500, flags:0 };
+  const at = (afterIdx === undefined) ? course.segments.length : afterIdx+1;
+  course.segments.splice(at, 0, ns);
+  markDirty(); renderSegList(); selectSeg(at);
+}
+
+function delSeg(i) {
+  course.segments.splice(i, 1);
+  const next = Math.min(selSeg, course.segments.length-1);
+  selSeg = course.segments.length ? next : -1;
+  markDirty(); renderSegList(); renderSegProps();
+}
+
+function moveSeg(i, dir) {
+  const j = i+dir;
+  if (j<0||j>=course.segments.length) return;
+  [course.segments[i],course.segments[j]]=[course.segments[j],course.segments[i]];
+  selSeg=j;
+  markDirty(); renderSegList(); renderSegProps();
+}
+
+// ── Rendering helpers ─────────────────────────────────────────────────────
+function totalLength() {
+  if (!course) return '0';
+  return (course.segments.reduce((a,s)=>a+s.length,0)/100).toFixed(0);
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function badges(flags) {
+  return FLAGS.filter(f=>flags&f.bit)
+    .map(f=>`<span class="badge ${f.cls}">${f.abbr}</span>`).join('');
+}
+
+function curveLabel(c) {
+  if (c===0)  return 'straight';
+  if (c>0)    return `←L +${c}`;
+  return `R→ ${c}`;
+}
+
+// ── Render functions ──────────────────────────────────────────────────────
+function renderAll() {
+  renderCourseList();
+  renderCourseProps();
+  renderSegList();
+  renderSegProps();
+  draw();
+}
+
+function renderCourseList() {
+  const el = document.getElementById('course-list');
+  if (!courseNames.length) {
+    el.innerHTML='<div class="empty">No courses yet</div>'; return;
+  }
+  el.innerHTML = courseNames.map(n=>`
+    <div class="course-item ${n===savedName?'active':''}" data-n="${esc(n)}">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n)}</span>
+      <button class="sm danger" data-del="${esc(n)}" title="Delete">✕</button>
+    </div>`).join('');
+  el.querySelectorAll('.course-item').forEach(item=>{
+    item.onclick = e => {
+      if (e.target.dataset.del) { deleteCourse(e.target.dataset.del); return; }
+      if (dirty && !confirm('Discard unsaved changes?')) return;
+      loadCourse(item.dataset.n);
+    };
+  });
+}
+
+function renderCourseProps() {
+  const el = document.getElementById('course-props');
+  document.getElementById('btn-add-seg').disabled = !course;
+  if (!course) { el.innerHTML='<div class="empty">No course loaded</div>'; return; }
+  el.innerHTML = `
+    <div class="pr">
+      <label>Name</label>
+      <input type="text" id="cp-name" value="${esc(course.name)}" maxlength="64">
+    </div>
+    <div class="pr">
+      <label>Difficulty</label>
+      <div class="diff-row">${[1,2,3,4,5].map(d=>
+        `<button class="diff-btn${course.difficulty===d?' on':''}" data-d="${d}">${d}</button>`
+      ).join('')}</div>
+    </div>
+    <div class="pr" style="color:var(--muted);font-size:10px">
+      ${course.segments.length} segments · ${totalLength()} m
+    </div>`;
+
+  document.getElementById('cp-name').oninput = e => {
+    const v = e.target.value.replace(/[^a-zA-Z0-9\-_]/g,'');
+    e.target.value = v;
+    course.name = v;
+    markDirty();
+  };
+  el.querySelectorAll('.diff-btn').forEach(b=>{ b.onclick=()=>{
+    course.difficulty=parseInt(b.dataset.d); markDirty(); renderCourseProps();
+  };});
+}
+
+function renderSegList() {
+  const el = document.getElementById('seg-list');
+  if (!course||!course.segments.length) {
+    el.innerHTML='<div class="empty">No segments</div>'; return;
+  }
+  const last = course.segments.length-1;
+  el.innerHTML = course.segments.map((seg,i)=>`
+    <div class="seg-item ${i===selSeg?'active':''}" data-i="${i}">
+      <span class="seg-idx">${i+1}</span>
+      <span class="seg-info">${curveLabel(seg.curve)} · ${seg.length}cm${badges(seg.flags)}</span>
+      <span class="seg-btns">
+        <button class="sm" data-mv="-1" data-i="${i}" ${i===0?'disabled':''}>↑</button>
+        <button class="sm" data-mv="1"  data-i="${i}" ${i===last?'disabled':''}>↓</button>
+        <button class="sm danger" data-rm="${i}">×</button>
+      </span>
+    </div>`).join('');
+
+  el.querySelectorAll('.seg-item').forEach(item=>{
+    item.addEventListener('click',e=>{
+      if (e.target.closest('button')) return;
+      selectSeg(parseInt(item.dataset.i));
+    });
+  });
+  el.querySelectorAll('button[data-mv]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); moveSeg(parseInt(b.dataset.i), parseInt(b.dataset.mv));
+  }));
+  el.querySelectorAll('button[data-rm]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation();
+    if (confirm(`Delete segment ${parseInt(b.dataset.rm)+1}?`)) delSeg(parseInt(b.dataset.rm));
+  }));
+}
+
+function renderSegProps() {
+  const el = document.getElementById('seg-props');
+  if (!course||selSeg<0||selSeg>=course.segments.length) {
+    el.innerHTML='<div class="empty">Click a segment on the canvas<br>or in the list above</div>';
+    return;
+  }
+  const seg = course.segments[selSeg];
+  el.innerHTML = `
+    <div class="pr">
+      <label>Curve — <span id="cv-val">${seg.curve}</span>
+        &nbsp;<small style="color:var(--muted)">(radian×32 total · neg=right, pos=left)</small></label>
+      <div class="curve-row">
+        <input type="range"  id="sp-cr" min="-128" max="127" value="${seg.curve}">
+        <input type="number" id="sp-cn" min="-128" max="127" value="${seg.curve}">
+      </div>
+    </div>
+    <div class="pr">
+      <label>Length — <span id="len-m">${(seg.length/100).toFixed(1)}</span> m</label>
+      <input type="number" id="sp-len" min="1" max="65535" value="${seg.length}">
+    </div>
+    <div class="pr">
+      <label>Flags</label>
+      ${FLAGS.map(f=>`
+        <label style="display:flex;align-items:center;gap:6px;padding:2px 0">
+          <input type="checkbox" data-bit="${f.bit}" ${seg.flags&f.bit?'checked':''}>
+          <span class="badge ${f.cls}">${f.abbr}</span> ${f.label}
+        </label>`).join('')}
+    </div>
+    <div style="padding:6px 10px;display:flex;gap:5px;flex-wrap:wrap;border-top:1px solid var(--border)">
+      <button id="sp-ins-b">↑ Before</button>
+      <button id="sp-ins-a">↓ After</button>
+      <button id="sp-del" class="danger">Delete</button>
+    </div>`;
+
+  const cvSpan  = el.querySelector('#cv-val');
+  const lenSpan = el.querySelector('#len-m');
+  const syncC = v => {
+    v = Math.max(-128, Math.min(127, v|0));
+    seg.curve = v;
+    el.querySelector('#sp-cr').value = v;
+    el.querySelector('#sp-cn').value = v;
+    cvSpan.textContent = v;
+    markDirty(); renderSegList();
+  };
+  el.querySelector('#sp-cr').oninput = e => syncC(+e.target.value);
+  el.querySelector('#sp-cn').oninput = e => syncC(+e.target.value);
+
+  el.querySelector('#sp-len').oninput = e => {
+    const v = parseInt(e.target.value);
+    if (v>=1&&v<=65535) { seg.length=v; lenSpan.textContent=(v/100).toFixed(1); markDirty(); renderSegList(); }
+  };
+  el.querySelectorAll('input[data-bit]').forEach(cb=>{ cb.onchange=()=>{
+    const bit=parseInt(cb.dataset.bit);
+    seg.flags = cb.checked ? (seg.flags|bit) : (seg.flags&~bit);
+    markDirty(); renderSegList();
+  };});
+
+  el.querySelector('#sp-ins-b').onclick = () => addSeg(selSeg-1);
+  el.querySelector('#sp-ins-a').onclick = () => addSeg(selSeg);
+  el.querySelector('#sp-del').onclick   = () => {
+    if (confirm(`Delete segment ${selSeg+1}?`)) delSeg(selSeg);
+  };
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-new').onclick = () => {
+  document.getElementById('mn').value='';
+  document.getElementById('md').value='1';
+  document.getElementById('modal-err').textContent='';
+  document.getElementById('modal-bg').classList.remove('hidden');
+  document.getElementById('mn').focus();
+};
+document.getElementById('m-cancel').onclick = () =>
+  document.getElementById('modal-bg').classList.add('hidden');
+document.getElementById('m-create').onclick = createCourse;
+document.getElementById('mn').onkeydown = e => { if(e.key==='Enter') createCourse(); };
+document.getElementById('modal-bg').onclick = e => {
+  if (e.target===document.getElementById('modal-bg'))
+    document.getElementById('modal-bg').classList.add('hidden');
+};
+
+// ── Add segment + Save shortcuts ──────────────────────────────────────────
+document.getElementById('btn-add-seg').onclick = () => addSeg();
+document.getElementById('btn-save').onclick    = saveCourse;
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); if(dirty) saveCourse(); }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────
+resizeCanvas();
+loadList();
+</script>
+</body>
+</html>

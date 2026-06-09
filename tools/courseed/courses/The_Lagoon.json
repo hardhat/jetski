@@ -1,0 +1,46 @@
+{
+  "name": "The_Lagoon",
+  "difficulty": 1,
+  "segments": [
+    {
+      "curve": 0,
+      "length": 10000,
+      "flags": 16
+    },
+    {
+      "curve": 2,
+      "length": 5000,
+      "flags": 0
+    },
+    {
+      "curve": 0,
+      "length": 1000,
+      "flags": 1
+    },
+    {
+      "curve": -2,
+      "length": 1500,
+      "flags": 0
+    },
+    {
+      "curve": 0,
+      "length": 3500,
+      "flags": 0
+    },
+    {
+      "curve": 0,
+      "length": 500,
+      "flags": 4
+    },
+    {
+      "curve": 0,
+      "length": 2500,
+      "flags": 2
+    },
+    {
+      "curve": 0,
+      "length": 1000,
+      "flags": 1
+    }
+  ]
+}
