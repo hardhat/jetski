@@ -34,6 +34,9 @@ typedef struct {
     TrackSegment *segments;
     uint16_t segment_count;
     uint8_t segment;
+    // Time
+    uint16_t elapsed_time; // in seconds
+    uint8_t elapsed_time_frames; // in frames, for sub-second timing
     // Player boat position
     int16_t world_pos_z; // in cm from beginning of segment
     int16_t world_pos_x; // in cm from centre of segment (following the curve)
@@ -183,9 +186,11 @@ void draw(void)
     // Show segment, speed in the top left
     // (Using the numbers texture for digits, and letters from the player texture)
     draw_number(state.segment, 0, 0);
-    draw_number(state.world_pos_z, 16*4, 0);
-    draw_number(state.yaw, 16*10, 0);
+    draw_number(state.world_pos_z, 16*3, 0);
+    draw_number(state.yaw, 16*12, 0);
     draw_number(state.velocity>>8, WIDTH-64, 0);
+
+    draw_number(state.elapsed_time, WIDTH/2-16, 0);
 
     int cumulative_z = -state.world_pos_z; // Start with the z position of the player within the current segment
     int old_lane_x = WIDTH/2; // Start with the lane position at the centre of the screen
@@ -249,6 +254,12 @@ void update(void)
     state.steer = (state.yaw * state.velocity) / MAX_SPEED;
     if(state.steer > STEER_MAX) state.steer = STEER_MAX;
     if(state.steer < -STEER_MAX) state.steer = -STEER_MAX;
+
+    state.elapsed_time_frames++;
+    if(state.elapsed_time_frames>=60) {
+        state.elapsed_time_frames=0;
+        state.elapsed_time++;
+    }
 }
 
 int main(int argc,char **argv)
