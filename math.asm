@@ -41,6 +41,61 @@ mult_zero:
        djnz @loop
        ret
 
+; =============================================================================
+; Routine: Div24_16
+; Function: Divides a 24-bit unsigned integer by a 16-bit unsigned integer.
+; Inputs:   A:HL = 24-bit Dividend
+;           BC   = 16-bit Divisor (must be non-zero)
+; Outputs:  A:HL = 24-bit Quotient
+;           DE   = 16-bit Remainder
+; Destroys: IY
+; Notes:    BC is preserved (divisor)
+; =============================================================================
+    PUBLIC Div24_16
+Div24_16:
+    ld de, 0        ; Clear the remainder accumulator
+
+    ld ixl, 24
+   
+
+@loop:
+    ; 1. Shift the 24-bit dividend/quotient left by 1 bit.
+    ; The Most Significant Bit (MSB) shifts out into the Carry flag.
+    add hl, hl      ; Shift HL left, MSB of HL → Carry
+    rla             ; Shift A left, Carry → bit 0 of A, MSB of A → Carry
+
+    ; 2. Shift the Carry flag into the 16-bit remainder
+    ex de, hl       ; remainder → HL
+    adc hl, hl      ; remainder <<= 1, MSB of dividend → bit 0
+
+    ; 3. Trial subtraction of the divisor from the remainder
+    or a            ; Clear Carry before subtraction
+    sbc hl, bc      ; HL = remainder - divisor; C=0 on success, C=1 on borrow
+
+    jr nc, @skip    ; No borrow → subtraction succeeded
+
+    ; 4. Restore remainder on failure.
+    ; Note: add hl,bc here always sets Carry (the 16-bit-wrapped value + divisor
+    ; overflows 16 bits), so Carry=1 on failure and Carry=0 on success at @skip.
+    add hl, bc
+
+@skip:
+    ex de, hl       ; remainder → DE, quotient → HL
+
+    ; 5. Inject the quotient bit.
+    ; Carry=0 on success, Carry=1 on failure. ccf inverts so:
+    ;   success → C=1 → keep the inc (bit=1)
+    ;   failure → C=0 → dec undoes the inc (bit=0)
+    ; add hl,hl at step 1 guarantees bit 0 of L is 0 before inc.
+    ccf
+    inc l
+    jr c, @bit0
+    dec l
+@bit0:
+    dec ixl
+    jr nz,@loop
+    ret
+
 
 ; ======================================================================
 ; 16-bit ÷ 8-bit Divide (16-bit Quotient, 8-bit Remainder)

@@ -14,7 +14,7 @@ course_index.o: course_index.asm
 	$(ZAS) $(INCLUDE) -o=course_index.o course_index.asm
 
 jetski.bin: $(OBJ)
-	$(ZAS) $(INCLUDE) -m -l -b -o=jetski.bin $(OBJ)
+	$(ZAS) $(INCLUDE) -m -l -s -b -o=jetski.bin $(OBJ)
 
 %.zts.zx0: %.zts
 	zx0 -f $<
