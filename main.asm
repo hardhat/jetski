@@ -7,6 +7,8 @@
 
 	extern course_index
 	extern Div24_16
+	extern Div_HL_D
+	extern DE_Times_A
 
 	org 0x4000
 
@@ -232,8 +234,16 @@ QuitGame:
 	LD DE,0
 	IOCTL
 
+	LD DE,ThanksForPlayingMessage
+	LD BC,ThanksForPlayingMessageLen
+	S_WRITE1 DEV_STDOUT
+
 	LD H,0
 	EXIT
+
+ThanksForPlayingMessage:
+	DB "Thanks for playing!", 13, 10
+ThanksForPlayingMessageLen EQU $-ThanksForPlayingMessage
 
     ; Wait for the FPGA to be initialized, read the status register and wait for VBlank
 wait_for_vblank:
@@ -398,9 +408,7 @@ UpdateHud:
 
 
 	LD HL,(Throttle)
-	; For now, just display the difficulty as a number in the top left corner, but
-	LD H,0
-	CALL PrintDec
+	CALL PrintDec16
 
 	LD DE,(Cursor)
 	LD A,192+10 ;':'
@@ -439,7 +447,49 @@ UpdateHud:
 	LD HL,(Velocity)
 	LD L,H ;show only the whole part
 	LD H,0
-	CALL PrintDec
+	CALL PrintDec99
+
+	;Second line of output
+	LD DE,MappedMem+160+Layer1Offset ; Move cursor to second line
+	LD A,$40    ; color map 4
+	LD B, 20
+@Loop2:
+	LD (DE),A
+	INC DE
+	DJNZ @Loop2
+
+	LD DE,MappedMem+160+Layer0Offset ; Move cursor to second line
+	LD (Cursor),DE
+
+	LD HL,(ElapsedTime)
+	LD D,60
+	CALL Div_HL_D
+	PUSH AF ; Remainder in A is the number of seconds, quotient in HL is the number of minutes
+	CALL PrintDec99 ; Print minutes
+
+	LD DE,(Cursor)
+	LD A,192+10 ;':'
+	LD (DE),A
+	INC DE
+	LD (Cursor),DE
+
+	POP AF ; Get seconds back from the stack
+	LD H,0
+	LD L,A
+	CALL PrintDec99 ; Print seconds
+
+	LD A,11 ;':'
+	CALL PrintDigit
+
+	LD DE,(ElapsedTimeFrames)
+	LD A,100
+	CALL DE_Times_A ; Get the number of frames (0-99) for the sub-second part of the time
+	; Result in HL
+	LD D,60
+	CALL Div_HL_D ; move to 100ths of a second: Frames*100/60
+	CALL PrintDec99 ; Print frames as 2 digit number
+
+	RET
 
 ; void plotLine(int x0, int y0, int x1, int y1)
 ; {
@@ -564,21 +614,29 @@ UpdatePhysics:
 	ADD HL,DE
 	LD DE, -COAST
 	ADD HL,DE
+
+	BIT 7,H	; Check if speed is negative
+	JR Z,SpeedPositive
+	LD HL,0	; If speed is negative, set to 0
+	JR DoneSpeedUpdate
+
+SpeedPositive:
 	LD DE, MAX_SPEED
 	OR A
 	SBC HL,DE
-	JR NC,NoMaxSpeed
+	JR C,NotMaxSpeed
 	LD HL,MAX_SPEED
 	JR DoneSpeedUpdate
-NoMaxSpeed:
+NotMaxSpeed:
 	ADD HL,DE ; Restore value
-	BIT 7,H	; Check if speed is negative
-	JR Z,DoneSpeedUpdate
-	LD HL,0	; If speed is negative, set to 0
+
 DoneSpeedUpdate:
-	LD (Velocity),HL
+	LD (Velocity),HL ; in 8.8 fixed-point cm/frame
 	; Update position
 	EX DE,HL ; DE = velocity
+	LD E,D
+	LD D,0	; We only care about the whole part of the velocity for movement, so we can ignore the fractional part in D.
+	; For now, ignore steering and just move forward based on the velocity
 	LD HL,(WorldPosZ)
 	ADD HL,DE
 	LD (WorldPosZ),HL
@@ -594,8 +652,8 @@ DoneSpeedUpdate:
 	LD H,(HL)
 	LD L,A	; segment length in HL
 	LD DE,(WorldPosZ)
-	OR A
 	EX DE,HL
+	OR A
 	SBC HL,DE ; HL = WorldPosZ - segment length
 	JR C,DoneSegmentCheck ; If we haven't reached the end of the segment, we're done
 	; Save position in new segment
@@ -618,7 +676,7 @@ DoneSegmentCheck:
 	LD HL,(ElapsedTimeFrames)
 	INC HL
 	LD (ElapsedTimeFrames),HL
-	LD A,H
+	LD A,L
 	CP 60
 	JR C,DoneTimeUpdate
 	LD A,0
@@ -700,63 +758,53 @@ HandleEsc:
 	; Handle escape key press by quitting the game.
 	JP QuitGame
 HandleLeft:
-	LD A,-1	; 0xff in 8-bit signed is -1
-	LD (Steer),A
-	LD A,C
+	LD DE,-1	; 0xff in 8-bit signed is -1
+	LD (Steer),DE
 	RET
 HandleRight:
-	LD A,1
-	LD (Steer),A
-	LD A,C
+	LD DE,1
+	LD (Steer),DE
 	RET
 HandleUp:
-	LD A,1
-	LD (Throttle),A
-	LD A,C
+	LD DE,ACCELERATION
+	LD (Throttle),DE
 	RET
 HandleDown:
-	LD A,-1
-	LD (Throttle),A
-	LD A,C
+	LD DE,-BREAK
+	LD (Throttle),DE
 	RET
 HandleSpace:
 	; Handle space key press by accelerating the jetski.
-	LD A,1
-	LD (Throttle),A
-	LD A,C
+	LD DE,ACCELERATION
+	LD (Throttle),DE
 	RET
 HandleEnter:
 	; Handle enter key press by resetting the game or performing another action.
 	RET
 
 HandleLeftRelease:
-	LD A,0
-	LD (Steer),A
-	LD A,C
+	LD DE,0
+	LD (Steer),DE
 	RET
 
 HandleRightRelease:
-	LD A,0
-	LD (Steer),A
-	LD A,C
+	LD DE,0
+	LD (Steer),DE
 	RET
 
 HandleUpRelease:
-	LD A,0
-	LD (Throttle),A
-	LD A,C
+	LD DE,0
+	LD (Throttle),DE
 	RET
 
 HandleDownRelease:
-	LD A,0
-	LD (Throttle),A
-	LD A,C
+	LD DE,0
+	LD (Throttle),DE
 	RET
 
 HandleSpaceRelease:
-	LD A,0
-	LD (Throttle),A
-	LD A,C
+	LD DE,0
+	LD (Throttle),DE
 	RET
 
 HandleEnterRelease:
