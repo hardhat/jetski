@@ -22,9 +22,11 @@ SDL_Renderer *renderer;
 #define STEER_MAX 16
 
 // pseudo-3D distannce of the player from the camera, in cm. This is used to calculate the size of sprites and the perspective effect.
-#define NEAR 256
+#define DIST 208 // FOV of ~75 degrees, based on the original game. This is used to calculate the perspective effect and the size of sprites.
 #define FAR 25000
-#define Y_WORLD 2500    // 30m above the water surface, for the position of the camera and the trees. This is used to calculate the perspective effect and the vertical position of sprites.
+#define Y_WORLD 120 // 1.2m above the waterline, in cm. This is used to calculate the perspective effect and the vertical position of sprites.
+#define HORIZON 64     // The y position of the horizon line, in pixels from the top of the screen. This is used to calculate the perspective effect and the vertical position of sprites.
+#define SCALE 35 // A tunable multiplier for the perspective effect. Adjust this to taste.
 
 typedef struct {
     // Current track state
@@ -42,6 +44,50 @@ typedef struct {
 } MapState;
 
 MapState state;
+
+// Lookup table for sine values, indexed by angle in degrees. Values are in 8.8 fixed point format (i.e. 1.0 is represented as 256).
+uint16_t g_sine_table[256] = {
+        0,     6,    12,    18,    25,    31,    37,    43,
+       49,    56,    62,    68,    74,    80,    86,    92,
+       97,   103,   109,   115,   120,   126,   131,   136,
+      142,   147,   152,   157,   162,   167,   171,   176,
+      181,   185,   189,   193,   197,   201,   205,   209,
+      212,   216,   219,   222,   225,   228,   231,   234,
+      236,   238,   241,   243,   244,   246,   248,   249,
+      251,   252,   253,   254,   254,   255,   255,   255,
+      256,   255,   255,   255,   254,   254,   253,   252,
+      251,   249,   248,   246,   244,   243,   241,   238,
+      236,   234,   231,   228,   225,   222,   219,   216,
+      212,   209,   205,   201,   197,   193,   189,   185,
+      181,   176,   171,   167,   162,   157,   152,   147,
+      142,   136,   131,   126,   120,   115,   109,   103,
+       97,    92,    86,    80,    74,    68,    62,    56,
+       49,    43,    37,    31,    25,    18,    12,     6,
+        0,    -6,   -12,   -18,   -25,   -31,   -37,   -43,
+      -49,   -56,   -62,   -68,   -74,   -80,   -86,   -92,
+      -97,  -103,  -109,  -115,  -120,  -126,  -131,  -136,
+     -142,  -147,  -152,  -157,  -162,  -167,  -171,  -176,
+     -181,  -185,  -189,  -193,  -197,  -201,  -205,  -209,
+     -212,  -216,  -219,  -222,  -225,  -228,  -231,  -234,
+     -236,  -238,  -241,  -243,  -244,  -246,  -248,  -249,
+     -251,  -252,  -253,  -254,  -254,  -255,  -255,  -255,
+     -256,  -255,  -255,  -255,  -254,  -254,  -253,  -252,
+     -251,  -249,  -248,  -246,  -244,  -243,  -241,  -238,
+     -236,  -234,  -231,  -228,  -225,  -222,  -219,  -216,
+     -212,  -209,  -205,  -201,  -197,  -193,  -189,  -185,
+     -181,  -176,  -171,  -167,  -162,  -157,  -152,  -147,
+     -142,  -136,  -131,  -126,  -120,  -115,  -109,  -103,
+      -97,   -92,   -86,   -80,   -74,   -68,   -62,   -56,
+      -49,   -43,   -37,   -31,   -25,   -18,   -12,    -6,
+};
+
+uint16_t sine_88(uint8_t angle) {
+    return (int16_t)g_sine_table[angle];
+}
+
+uint16_t cosine_88(uint8_t angle) {
+    return (int16_t)g_sine_table[(angle + 64) % 256];
+}
 
 typedef struct { SDL_Texture *t; int w, h; } Tex;
 
@@ -151,10 +197,15 @@ void draw(void)
         // The z position of the segment relative to the player
         int z = cumulative_z + seg->length;
         cumulative_z += seg->length;
-        // Far plane clipping at 25000 cm (2.5km)
-        if(z>25000) break;
+        // Far plane clipping at 5000 cm (50m)
+        if(z>FAR) break;
         int x = WIDTH/2 + seg->curve*4;
-        int y = HEIGHT - Y_WORLD*NEAR/z; // Perspective effect: the further away, the closer to the horizon 
+        // y_world is the camera height above the water, scaled up from physical cm to
+        // a tunable projection constant so that the nearest visible segment maps to the
+        // bottom of the road area.  Physical Y_WORLD=120 cm gives a product of 24960,
+        // but with segments starting at z~5000 we need ~880000 to fill the road area,
+        // so we multiply by 35.  Adjust this multiplier to taste.
+        int y = HORIZON + (Y_WORLD * DIST * SCALE) / z; // Perspective: far → near horizon, near → bottom
         printf("Segment %d: z=%d, x=%d, y=%d\n", i, z, x, y);
         if(y<-16) break; // Off the top of the screen
         if(y>HEIGHT) continue; // Off the bottom of the screen
@@ -165,8 +216,8 @@ void draw(void)
         SDL_SetRenderDrawColor(renderer, 255,255,255,255);
         int lane_width = 10*4; // 10m wide lane, scaled by
         int lane_x = WIDTH/2 + seg->curve*4; // Lane position based on curve
-        int lane_y = HEIGHT - Y_WORLD*NEAR/z; // Perspective effect: the further away, the closer to the horizon
-        SDL_RenderDrawLine(renderer, lane_x-lane_width, lane_y, lane_x+lane_width, lane_y);
+        int lane_y = y;
+        //SDL_RenderDrawLine(renderer, lane_x-lane_width, lane_y, lane_x+lane_width, lane_y);
         // Draw left lane edge, from old to current segment, to create a continuous line. This is a bit hacky but it works for now.
         SDL_RenderDrawLine(renderer, old_lane_x-lane_width, old_lane_y, lane_x-lane_width, lane_y);
         // Draw right lane edge, from old to current segment, to create a continuous line. This is a bit hacky but it works for now.
