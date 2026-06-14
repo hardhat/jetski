@@ -1,6 +1,6 @@
 ZAS?=z88dk-z80asm
 INCLUDE=-I../Zeal-VideoBoard-SDK/include -I../Zeal-8-bit-OS/kernel_headers/z88dk-z80asm
-OBJ=main.o math.o
+OBJ=main.o math.o course_index.o
 IMG=img/bg.zts.zx0 img/player.zts.zx0 img/tree.zts.zx0 img/ramp.zts.zx0 img/numbers.zts.zx0
 LVL=map/baselayer0000.ztm
 
@@ -8,9 +8,10 @@ all: jetski.bin
 
 main.o: main.asm dzx0_standard.asm $(LVL) $(IMG)
 	$(ZAS) $(INCLUDE) -o=main.o main.asm
-
 math.o: math.asm
 	$(ZAS) $(INCLUDE) -o=math.o math.asm
+course_index.o: course_index.asm
+	$(ZAS) $(INCLUDE) -o=course_index.o course_index.asm
 
 jetski.bin: $(OBJ)
 	$(ZAS) $(INCLUDE) -m -l -b -o=jetski.bin $(OBJ)

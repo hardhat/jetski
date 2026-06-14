@@ -11,11 +11,20 @@ SDL_Renderer *renderer;
 #define WIDTH 320
 #define HEIGHT 240
 
-#define MAX_SPEED 46
-#define ACCELERATION 4
-#define COAST 2
-#define BREAK 6
+#define MAX_SPEED 46*256 // 46cm/frame = 100km/h
+// These values are in cm/frame/256 (fixed point)
+#define ACCELERATION 75
+#define COAST 25
+#define BREAK 150
+
+// These values are in degrees, and represent how much the steering wheel is turned by the player. They are not the actual steering effect, which is calculated based on yaw and speed.
+#define YAW 1
 #define STEER_MAX 16
+
+// pseudo-3D distannce of the player from the camera, in cm. This is used to calculate the size of sprites and the perspective effect.
+#define NEAR 256
+#define FAR 25000
+#define Y_WORLD 2500    // 30m above the water surface, for the position of the camera and the trees. This is used to calculate the perspective effect and the vertical position of sprites.
 
 typedef struct {
     // Current track state
@@ -26,17 +35,19 @@ typedef struct {
     // Player boat position
     int16_t world_pos_z; // in cm from beginning of segment
     int16_t world_pos_x; // in cm from centre of segment (following the curve)
-    int16_t velocity; // in cm/frame (46cm/frame = 100km/h)
+    int16_t velocity; // in cm/frame*256 (fixed point) (46cm/frame = 100km/h)
     int16_t throttle;   // How much acceleration on the engine
     int16_t yaw;    // Steering wheel direction
+    int16_t steer;  // How much to steer the boat, based on yaw and speed
 } MapState;
 
 MapState state;
 
 typedef struct { SDL_Texture *t; int w, h; } Tex;
 
-Tex texture;
+Tex player_texture;
 Tex numbers;
+Tex tree;
 
 static Tex load_tex(SDL_Renderer *r, const char *path) {
     SDL_Surface *s = IMG_Load(path);
@@ -127,8 +138,42 @@ void draw(void)
     // (Using the numbers texture for digits, and letters from the player texture)
     draw_number(state.segment, 0, 0);
     draw_number(state.world_pos_z, 16*4, 0);
-    draw_number(state.yaw, 16*8, 0);
-    draw_number(state.velocity, WIDTH-48, 0);
+    draw_number(state.yaw, 16*10, 0);
+    draw_number(state.velocity>>8, WIDTH-64, 0);
+
+    int cumulative_z = -state.world_pos_z; // Start with the z position of the player within the current segment
+    int old_lane_x = WIDTH/2; // Start with the lane position at the centre of the screen
+    int old_lane_y = HEIGHT; // Start with the lane position at the bottom of the screen
+    for(int i=0;i<state.segment_count;i++) {
+        TrackSegment *seg = &state.segments[i];
+        if(i<state.segment) continue; // Skip segments behind the player
+
+        // The z position of the segment relative to the player
+        int z = cumulative_z + seg->length;
+        cumulative_z += seg->length;
+        // Far plane clipping at 25000 cm (2.5km)
+        if(z>25000) break;
+        int x = WIDTH/2 + seg->curve*4;
+        int y = HEIGHT - Y_WORLD*NEAR/z; // Perspective effect: the further away, the closer to the horizon 
+        printf("Segment %d: z=%d, x=%d, y=%d\n", i, z, x, y);
+        if(y<-16) break; // Off the top of the screen
+        if(y>HEIGHT) continue; // Off the bottom of the screen
+        draw_tile(&tree, 6, x-16, y-16);
+        draw_tile(&tree, 14, x+16, y-16);
+
+        // Draw the 10m wide lane as a line to either side
+        SDL_SetRenderDrawColor(renderer, 255,255,255,255);
+        int lane_width = 10*4; // 10m wide lane, scaled by
+        int lane_x = WIDTH/2 + seg->curve*4; // Lane position based on curve
+        int lane_y = HEIGHT - Y_WORLD*NEAR/z; // Perspective effect: the further away, the closer to the horizon
+        SDL_RenderDrawLine(renderer, lane_x-lane_width, lane_y, lane_x+lane_width, lane_y);
+        // Draw left lane edge, from old to current segment, to create a continuous line. This is a bit hacky but it works for now.
+        SDL_RenderDrawLine(renderer, old_lane_x-lane_width, old_lane_y, lane_x-lane_width, lane_y);
+        // Draw right lane edge, from old to current segment, to create a continuous line. This is a bit hacky but it works for now.
+        SDL_RenderDrawLine(renderer, old_lane_x+lane_width, old_lane_y, lane_x+lane_width, lane_y);
+        old_lane_x = lane_x;
+        old_lane_y = lane_y;
+    }
 }
 
 void update(void)
@@ -139,7 +184,7 @@ void update(void)
     if(state.velocity<0) state.velocity=0;
     if(state.velocity>MAX_SPEED) state.velocity=MAX_SPEED;
     // End of segment?
-    state.world_pos_z += state.velocity;
+    state.world_pos_z += (state.velocity >> 8); // Divide by 256 to convert from fixed point
     TrackSegment *seg = &state.segments[state.segment];
     if(state.world_pos_z>seg->length) {
         state.world_pos_z -= seg->length;
@@ -148,6 +193,11 @@ void update(void)
             state.segment=0;
         }
     }
+    // Update steering based on yaw and speed
+    // The faster you go, the more your yaw affects your steer, up to a maximum
+    state.steer = (state.yaw * state.velocity) / MAX_SPEED;
+    if(state.steer > STEER_MAX) state.steer = STEER_MAX;
+    if(state.steer < -STEER_MAX) state.steer = -STEER_MAX;
 }
 
 int main(int argc,char **argv)
@@ -160,8 +210,9 @@ int main(int argc,char **argv)
     renderer = SDL_CreateRenderer(window, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
-    texture = load_tex(renderer, "../img/player.png");
+    player_texture = load_tex(renderer, "../img/player.png");
     numbers = load_tex(renderer, "../img/numbers.png");
+    tree = load_tex(renderer, "../img/tree.png");
 
     SDL_RenderSetLogicalSize(renderer, WIDTH, HEIGHT);
 
@@ -174,6 +225,7 @@ int main(int argc,char **argv)
     }
 
     bool done=false;
+    uint32_t last_time = SDL_GetTicks();
     while(!done) {
         SDL_Event event;
         while(SDL_PollEvent(&event))
@@ -188,18 +240,16 @@ int main(int argc,char **argv)
                             done=true;
                             break;
                         case SDLK_LEFT:
-                            state.yaw--;
-                            if(state.yaw<-STEER_MAX) state.yaw=-STEER_MAX;
+                            state.yaw=-YAW;
                             break;
                         case SDLK_RIGHT:
-                            state.yaw++;
-                            if(state.yaw>STEER_MAX) state.yaw=STEER_MAX;
+                            state.yaw=YAW;
                             break;
                         case SDLK_UP:
                             state.throttle=ACCELERATION;
                             break;
                         case SDLK_DOWN:
-                            state.throttle=BREAK;
+                            state.throttle=-BREAK;
                             break;
                         case SDLK_SPACE:
                             //state.velocity+=boost;
@@ -227,7 +277,12 @@ int main(int argc,char **argv)
         update();
         draw();
         SDL_RenderPresent(renderer);
-        SDL_Delay(16);
+        uint32_t current_time = SDL_GetTicks();
+        uint32_t elapsed_time = current_time - last_time;
+        if(elapsed_time < 16) {
+            SDL_Delay(16 - elapsed_time);
+        }
+        last_time = current_time;
     }
 
     // Clean up

@@ -530,7 +530,12 @@ UpdateAngle:
 	; based on how you are representing the player's angle, speed, and position in memory, and how you want the steering to affect the angle.
 	; For example, if the player's speed is stored in a variable called PlayerSpeed, and
 	; the player's x and y position are stored in variables called PlayerX and PlayerY, you would load those values, call the sine and cosine functions with the player's angle to get the change in x and y, multiply those by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
-	
+NoSteer:
+	; If steering is zero, just update the player's position based on the current speed and angle without changing the angle.
+	; This is where you would call the sine and cosine functions with the player's current angle to get the change in x and y, and then update the player's position based on the current speed.
+	; For example, you could call sine_88 with the player's angle to get the change in y, and cosine_88 to get the change in x, and then multiply
+	; those values by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
+	; Note: You would need to implement the sine_88 and cosine_88 functions in math.asm, and they would return the sine and cosine of the input angle as 8.8
 	RET
 
 ReadKeyboard:
@@ -614,6 +619,8 @@ Throttle:
 	DEFB 0
 Speed:
 	DEFW 0
+PlayerAngle:
+	DEFB 0,0
 
 
 keyboard_error_message:
