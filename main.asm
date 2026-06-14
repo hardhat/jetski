@@ -5,6 +5,9 @@
 	include "zos_keyboard.asm"
 	include "zos_video.asm"
 
+	extern course_index
+	extern Div24_16
+
 	org 0x4000
 
 PageMapPort	EQU	0xF0	;+0 to +3 for each 16k bank
@@ -17,6 +20,18 @@ SpritesOffset	EQU	VID_MEM_SPRITES_OFFSET
 MappedMem	EQU	0x8000	;PAGE2_VADDR
 buffer	EQU 0xc000	;PAGE3_VADDR
 bufferLen	EQU 0x3000
+
+Start:
+
+InitKeyboard:
+	; Initialize the keyboard here if necessary.  For now, we just read from it each frame in the main loop.
+	; Initialize the keyboard by setting it to raw and non-blocking
+    ;void* arg = (void*) (KB_READ_NON_BLOCK | KB_MODE_RAW);
+	LD DE,KB_READ_NON_BLOCK | KB_MODE_RAW
+	LD H,DEV_STDIN
+	LD C,KB_CMD_SET_MODE
+    ;ioctl(DEV_STDIN, KB_CMD_SET_MODE, arg);
+	IOCTL
 
 InitVideo:
 	XOR	A
@@ -178,10 +193,15 @@ InitSpritesColLoop:
 	JR InitSpriteTable
 
 DoneInitSprites:
-	; LD  HL,
-	; LD	DE,buffer
-	; LD	BC,sprite_size*2
-	; LDIR
+	; Always select track 0
+	LD HL,(course_index+0) ; name_ptr
+	LD (CourseName),HL
+	LD A,(course_index+2) ; difficulty
+	LD (CourseDifficulty),A
+	LD HL,(course_index+3) ; segment_count
+	LD (CourseSegmentCount),HL
+	LD HL,(course_index+5) ; segments_ptr
+	LD (CourseSegmentPtr),HL
 
 GameLoop:
 	CALL wait_for_vblank
@@ -192,6 +212,7 @@ GameLoop:
 	LD BC, sprite_size * 128
 	LDIR
 
+	CALL UpdateHud
 	CALL UpdateShore
 
 	; Wait for the next frame
@@ -361,6 +382,65 @@ ResetShore:
 
 	RET
 
+UpdateHud:
+	; Set cursor position to top left corner at the beginning of the mapped page 2 memory 0x8000
+	LD DE,MappedMem+80+Layer0Offset ; 80 is the offset to the second row of the tilemap, so we can write numbers in the top left corner without worrying about the status bar
+	LD (Cursor),DE
+
+	; Select the color map for the number output
+	LD DE,MappedMem+80+Layer1Offset ; The layer 1 tilemap is used for the color map for the layer 0 tilemap, so we can have different colored numbers without affecting the background
+	LD A,$40    ; color map 4
+	LD B, 20
+@Loop:
+	LD (DE),A
+	INC DE
+	DJNZ @Loop
+
+
+	LD HL,(Throttle)
+	; For now, just display the difficulty as a number in the top left corner, but
+	LD H,0
+	CALL PrintDec
+
+	LD DE,(Cursor)
+	LD A,192+10 ;':'
+	LD (DE),A
+	INC DE
+	LD (Cursor),DE
+
+	LD HL,(Segment)
+	CALL PrintDec99
+
+	LD DE,(Cursor)
+	LD A,192+11 ;'/'
+	LD (DE),A
+	INC DE
+	LD (Cursor),DE
+
+	LD HL,(CourseSegmentCount)
+	CALL PrintDec99
+
+
+	LD DE,(Cursor)
+	LD A,192+10 ;':'
+	LD (DE),A
+	INC DE
+	LD (Cursor),DE
+
+	LD HL,(WorldPosZ)
+	CALL PrintDec16	; 5 digits for the z position in cm
+
+	LD DE,(Cursor)
+	LD A,192+10 ;':'
+	LD (DE),A
+	INC DE
+	LD (Cursor),DE
+
+	LD HL,(Velocity)
+	LD L,H ;show only the whole part
+	LD H,0
+	CALL PrintDec
+
 ; void plotLine(int x0, int y0, int x1, int y1)
 ; {
 ;    int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
@@ -446,13 +526,14 @@ PrintDec16:
 PrintDec:	; Print a 16-bit number in HL to the screen at the current cursor position
 	LD BC,-100
 	CALL SubCount
+PrintDec99:	; Only 2 digit output
 	LD BC,-10
 	CALL SubCount
 	LD BC,-1
 	CALL SubCount
 	RET
 SubCount:
-	xOR a
+	XOR A
 SubCountLoop:
 	INC A
 	ADD HL,BC
@@ -462,87 +543,91 @@ SubCountLoop:
 	;Note: "0123456789:/" is the character set used, so '0' is tile 192.
 PrintDigit:
 	LD DE,(Cursor)
-	ADD A,192
+	ADD A,192-1
 	LD (DE),A
 	INC DE
 	LD (Cursor),DE
 	RET
+
+	DEFC ACCELERATION = 75	; in 8.8 fixed-point cm/frame^2
+	DEFC COAST = 25
+	DEFC BREAK = 150
+	DEFC MAX_SPEED = 46*256	; in 8.8 fixed-point cm/frame (about 100 km/h)
 
 UpdatePhysics:
 	; Update the physics of the game here, including player movement, collision detection, etc. 
 	;This is called once per frame after reading the keyboard input and before drawing the next frame.
 	; First update the player's speed based on the throttle input
 	; Then update the player's position based on the speed and steering input
-	; Then check for collisions with the environment and update the game state accordingly (e.g.
-	; if the player hits a tree, reset their position and speed)
-	LD A,(Throttle)
-	CP 0
-	JR Z,NoThrottle
-	; If throttle is not zero, increase speed by 1, up to a maximum of 10.
-	LD HL,Speed
-	LD A,(HL)
-	CP 10
-	JR NC,MaxSpeed
-	INC A
-	LD (HL),A
-	JR UpdatePosition
-MaxSpeed:
-	LD (HL),10
-	JR UpdatePosition
-NoThrottle:
-	; If throttle is zero, decrease speed by 1, down to a minimum of 0.
-	LD HL,Speed
-	LD A,(HL)
-	CP 0
-	JR Z,MinSpeed
-	DEC A
-	LD (HL),A
-	JR UpdatePosition
-MinSpeed:
-	LD (HL),0
-	JR UpdatePosition
-UpdatePosition:
-	; Update the player's position based on the current speed and steering input.
-	; This is where you would use the sine and cosine functions to calculate the 
-	; change in x and y based on the player's current angle and speed, and then update 
-	; the player's position accordingly.
-	LD A,(Steer)
-	CP 0
-	JR Z,NoSteer
-	; If steering is not zero, update the player's angle based on the steering input.
-	; For example, if the player is steering left, decrease the angle by a certain amount, and if they are steering right, increase the angle by a certain amount.
-	; The angle should wrap around from 255 back to 0, since we are using an 8-bit value to represent the angle.
-	; After updating the angle, use the sine and cosine functions to calculate the change in x and y based on the new angle and the current speed, and then update the player's position accordingly.
-	; Note: The player's angle and position should be stored in memory, and you would need to load those values, update them, and then store them back in memory.
-	; For example, you could store the player's angle in a variable called PlayerAngle, and the player's x and y position in variables called PlayerX and PlayerY. You would then load those values, update them based on the steering and speed, and then store them back in memory.
-	; This is just a placeholder implementation, and you would need to fill in the actual calculations based on the player's current angle and speed, and how much you want the steering to affect the angle.
-	LD HL,PlayerAngle
-	LD A,(HL)
-	CP 128
-	JR NC,SteerRight
-	; Steer left
-	DEC A
-	JR UpdateAngle
-SteerRight:
-	INC A ; Steer right
-UpdateAngle:
-	LD (HL),A
-	; Now calculate the change in x and y based on the new angle and current speed, and update the player's position accordingly.
-	; This is where you would call the sine and cosine functions with the player's angle to get the change in x and y, and then update the player's position based on the current speed.
-	; For example, you could call sine_88 with the player's angle to get the change in y, and cosine_88 to get the change in x, and then
-	; multiply those values by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
-	; Note: You would need to implement the sine_88 and cosine_88 functions in math.asm, and they would return the sine and cosine of the input angle as 8.8 fixed point numbers, which you would then need to multiply by the player's speed (also in 8
-	; .8 fixed point) to get the change in position, and then update the player's x and y position (also in 8.8 fixed point) accordingly.
-	; This is just a placeholder implementation, and you would need to fill in the actual calculations
-	; based on how you are representing the player's angle, speed, and position in memory, and how you want the steering to affect the angle.
-	; For example, if the player's speed is stored in a variable called PlayerSpeed, and
-	; the player's x and y position are stored in variables called PlayerX and PlayerY, you would load those values, call the sine and cosine functions with the player's angle to get the change in x and y, multiply those by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
-NoSteer:
-	; If steering is zero, just update the player's position based on the current speed and angle without changing the angle.
-	; This is where you would call the sine and cosine functions with the player's current angle to get the change in x and y, and then update the player's position based on the current speed.
-	; For example, you could call sine_88 with the player's angle to get the change in y, and cosine_88 to get the change in x, and then multiply
-	; those values by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
-	; Note: You would need to implement the sine_88 and cosine_88 functions in math.asm, and they would return the sine and cosine of the input angle as 8.8
+	LD HL,(Velocity)
+	LD DE,(Throttle)
+	ADD HL,DE
+	LD DE, -COAST
+	ADD HL,DE
+	LD DE, MAX_SPEED
+	OR A
+	SBC HL,DE
+	JR NC,NoMaxSpeed
+	LD HL,MAX_SPEED
+	JR DoneSpeedUpdate
+NoMaxSpeed:
+	ADD HL,DE ; Restore value
+	BIT 7,H	; Check if speed is negative
+	JR Z,DoneSpeedUpdate
+	LD HL,0	; If speed is negative, set to 0
+DoneSpeedUpdate:
+	LD (Velocity),HL
+	; Update position
+	EX DE,HL ; DE = velocity
+	LD HL,(WorldPosZ)
+	ADD HL,DE
+	LD (WorldPosZ),HL
+	; Look for end of segment
+	LD HL,(Segment)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	LD DE,(CourseSegmentPtr)
+	ADD HL,DE ; HL = pointer to current segment
+	INC HL ; Skip curve
+	LD A,(HL) ; Get length of segment
+	INC HL
+	LD H,(HL)
+	LD L,A	; segment length in HL
+	LD DE,(WorldPosZ)
+	OR A
+	EX DE,HL
+	SBC HL,DE ; HL = WorldPosZ - segment length
+	JR C,DoneSegmentCheck ; If we haven't reached the end of the segment, we're done
+	; Save position in new segment
+	LD (WorldPosZ),HL
+	; Move to the next segment
+	LD HL,(Segment)
+	INC HL
+	LD (Segment),HL
+	LD A,(CourseSegmentCount)
+	CP L
+	JR NZ,DoneSegmentCheck ; If we haven't reached the end of the course, we're done
+	; Restart the course
+	LD HL,0
+	LD (Segment),HL
+	LD (WorldPosZ),HL
+DoneSegmentCheck:
+	; TODO steering and curve handling
+
+	; Update elapsed time
+	LD HL,(ElapsedTimeFrames)
+	INC HL
+	LD (ElapsedTimeFrames),HL
+	LD A,H
+	CP 60
+	JR C,DoneTimeUpdate
+	LD A,0
+	LD (ElapsedTimeFrames),A
+	LD HL,(ElapsedTime)
+	INC HL
+	LD (ElapsedTime),HL
+DoneTimeUpdate:
+
 	RET
 
 ReadKeyboard:
@@ -561,6 +646,8 @@ ReadKeyboardLoop:
 	LD HL,keyboard_buffer
 	LD A,(HL)
 	LD C,A
+	CP KB_RELEASED
+	JR Z,ReadRelease
 	CP KB_ESC
 	CALL Z,HandleEsc
 	CP KB_UP_ARROW
@@ -578,6 +665,28 @@ ReadKeyboardLoop:
 	; Handle other keys here
 	INC HL
 	DJNZ ReadKeyboardLoop
+	RET
+ReadRelease:
+	DEC B
+	RET Z	; No more keys to read
+	INC HL
+	LD A,(HL)
+	CP KB_UP_ARROW
+	CALL Z,HandleUpRelease
+	CP KB_DOWN_ARROW
+	CALL Z,HandleDownRelease
+	CP KB_LEFT_ARROW
+	CALL Z,HandleLeftRelease
+	CP KB_RIGHT_ARROW
+	CALL Z,HandleRightRelease
+	CP KB_KEY_SPACE
+	CALL Z,HandleSpaceRelease
+	CP KB_KEY_ENTER
+	CALL Z,HandleEnterRelease
+	; Handle other key releases here
+	INC HL
+	DJNZ ReadKeyboardLoop
+
 	RET
 
 ReadKeyboardError:
@@ -620,14 +729,68 @@ HandleEnter:
 	; Handle enter key press by resetting the game or performing another action.
 	RET
 
+HandleLeftRelease:
+	LD A,0
+	LD (Steer),A
+	LD A,C
+	RET
+
+HandleRightRelease:
+	LD A,0
+	LD (Steer),A
+	LD A,C
+	RET
+
+HandleUpRelease:
+	LD A,0
+	LD (Throttle),A
+	LD A,C
+	RET
+
+HandleDownRelease:
+	LD A,0
+	LD (Throttle),A
+	LD A,C
+	RET
+
+HandleSpaceRelease:
+	LD A,0
+	LD (Throttle),A
+	LD A,C
+	RET
+
+HandleEnterRelease:
+	; Handle enter key release by resetting the game or performing another action.
+	RET
+
+CourseName:
+	DEFW 0	; Pointer to the course name string
+CourseDifficulty:
+	DEFB 0	; Difficulty level of the course (0-255)
+CourseSegmentCount:
+	DEFW 0	; Number of segments in the course
+CourseSegmentPtr:
+	DEFW 0	; Pointer to the array of track segments for the course
+Segment:
+	DEFW 0	; Current segment index
+
+
+ElapsedTime:
+	DEFW 0	; in seconds
+ElapsedTimeFrames:
+	DEFB 0	; in frames, for sub-second timing
+WorldPosX:
+	DEFW 0	; from center of segment, in cm
+WorldPosZ:
+	DEFW 0	; from beginning of segment, in cm
+Yaw:
+	DEFB 0	; player's angle, 0-255 representing 0-360 degrees
 Steer:
-	DEFB 0
+	DEFW 0	; player's steering, in cm/s
 Throttle:
-	DEFB 0
-Speed:
-	DEFW 0
-PlayerAngle:
-	DEFB 0,0
+	DEFW 0	; player's throttle, in 8.8 fixed-point, cm/frame^2
+Velocity:
+	DEFW 0	; player's speed, in 8.8 fixed-point cm/frame
 
 
 keyboard_error_message:

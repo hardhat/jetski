@@ -15,6 +15,7 @@ course_index.o: course_index.asm
 
 jetski.bin: $(OBJ)
 	$(ZAS) $(INCLUDE) -m -l -s -b -o=jetski.bin $(OBJ)
+	cp jetski.bin s
 
 %.zts.zx0: %.zts
 	zx0 -f $<
