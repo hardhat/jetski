@@ -26,6 +26,7 @@ mult_zero:
 ; See https://learn.cemetech.net/index.php/Z80:Advanced_Math for below
 
 ; Mutliply a 16-bit number in DE by an 8-bit number in A, returning the 24-bit result in A:HL (DE is unchanged)
+    PUBLIC DE_Times_A
  DE_Times_A:      ; AHL = DE × A
        ld hl,0      ; Use HL to store the product
        ld b,8       ; Eight bits to check
@@ -48,6 +49,7 @@ mult_zero:
 ; Outputs: HL = Quotient, A = Remainder
 ; Destroys: A, B
 ; ======================================================================
+    PUBLIC Div_HL_D
  Div_HL_D:            ; HL = HL ÷ D, A = remainder
        XOR    A         ; Clear upper eight bits of AHL
        LD     B, 16     ; Sixteen bits in dividend
@@ -71,8 +73,9 @@ mult_zero:
 ; Outputs: B:HL:A = 24-bit Product (HL = high 16 bits, A = low 8 bits)
 ; Destroys: BC
 ; =====================================================================
+    PUBLIC BC_Times_DE
 BC_Times_DE:
-   ;  BC*DE->BHLA
+;  BC*DE->BHLA
    	ld a,b
    	ld hl,0
    	ld b,h
@@ -115,6 +118,7 @@ BC_Times_DE:
 ; Outputs: B:HL:A = 24-bit Product (HL = high 16 bits, A = low 8 bits)
 ; Destroys: BC
 ; =====================================================================
+    PUBLIC DE_Div_BC_88
  DE_Div_BC_88:
    ;Inputs:
    ;     DE,BC are 8.8 Fixed Point numbers
@@ -177,6 +181,7 @@ seed2_0:
 seed2_1:
 	dw 0xDEF0
 
+    PUBLIC rand16
 rand16:
    ;Inputs:
    ;   seed1
@@ -231,6 +236,7 @@ rand16:
 ;   DE is an 8.8 fixed point number representing an angle in radians, where 256 is a full circle, so 64 is pi/2, 128 is pi, etc.
 ;sine_88 and cosine_88 return the sine and cosine of the input angle, respectively, as 8.8 fixed point numbers in HL. The functions use the above polynomial approximations for sine and cosine, and are accurate enough for our purposes.
 ;======================================================================
+    PUBLIC sine_88
 sine_88:
    ;Inputs: de
        push de

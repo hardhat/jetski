@@ -1,0 +1,61 @@
+{
+  "name": "Zig_Zag_Alley",
+  "difficulty": 3,
+  "segments": [
+    {
+      "curve": 0,
+      "length": 3500,
+      "flags": 32
+    },
+    {
+      "curve": 101,
+      "length": 8000,
+      "flags": 1
+    },
+    {
+      "curve": -101,
+      "length": 8000,
+      "flags": 1
+    },
+    {
+      "curve": 101,
+      "length": 8000,
+      "flags": 4
+    },
+    {
+      "curve": -102,
+      "length": 8000,
+      "flags": 2
+    },
+    {
+      "curve": 0,
+      "length": 5000,
+      "flags": 8
+    },
+    {
+      "curve": -50,
+      "length": 5000,
+      "flags": 1
+    },
+    {
+      "curve": 0,
+      "length": 8000,
+      "flags": 0
+    },
+    {
+      "curve": 50,
+      "length": 5000,
+      "flags": 1
+    },
+    {
+      "curve": -100,
+      "length": 12000,
+      "flags": 2
+    },
+    {
+      "curve": 0,
+      "length": 12000,
+      "flags": 20
+    }
+  ]
+}

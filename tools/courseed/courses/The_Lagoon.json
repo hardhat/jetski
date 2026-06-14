@@ -8,17 +8,17 @@
       "flags": 16
     },
     {
-      "curve": 2,
+      "curve": 35,
       "length": 5000,
       "flags": 0
     },
     {
-      "curve": 0,
+      "curve": 28,
       "length": 1000,
       "flags": 1
     },
     {
-      "curve": -2,
+      "curve": 25,
       "length": 1500,
       "flags": 0
     },
@@ -28,19 +28,49 @@
       "flags": 0
     },
     {
-      "curve": 0,
+      "curve": -13,
       "length": 500,
       "flags": 4
     },
     {
-      "curve": 0,
+      "curve": -25,
       "length": 2500,
       "flags": 2
     },
     {
-      "curve": 0,
-      "length": 1000,
+      "curve": 51,
+      "length": 8000,
       "flags": 1
+    },
+    {
+      "curve": 0,
+      "length": 3500,
+      "flags": 3
+    },
+    {
+      "curve": 52,
+      "length": 8000,
+      "flags": 0
+    },
+    {
+      "curve": 0,
+      "length": 4700,
+      "flags": 1
+    },
+    {
+      "curve": 26,
+      "length": 2500,
+      "flags": 32
+    },
+    {
+      "curve": 0,
+      "length": 500,
+      "flags": 0
+    },
+    {
+      "curve": 26,
+      "length": 3500,
+      "flags": 0
     }
   ]
 }

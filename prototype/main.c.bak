@@ -1,0 +1,279 @@
+/* prototype/main.c
+ * Jetski — pseudo-3D track motion prototype
+ *
+ * Controls:  W / Up     = throttle
+ *            S / Down   = brake
+ *            A / Left   = steer left
+ *            D / Right  = steer right
+ *            ESC        = quit
+ *
+ * Build: cd prototype && make && ./prototype
+ */
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+
+#ifndef stderr
+#define stderr NULL
+#endif
+
+/* ── Window & logical resolution ─────────────────────────────────────── */
+#define WIN_W   640
+#define WIN_H   480
+#define LOG_W   320   /* game logic / draw resolution */
+#define LOG_H   240
+
+/* ── Screen layout — matches Zeal spec (logical px) ──────────────────── */
+#define HUD_H      16
+#define SKY_H      64
+#define HORIZON_Y  (HUD_H + SKY_H)   /* = 80 px */
+
+/* ── Camera projection ───────────────────────────────────────────────── */
+#define CAM_H   100.0f   /* camera height above water plane (world units) */
+#define CAM_D   130.0f   /* focal length (distance to projection plane)   */
+#define SCR_CX  (LOG_W / 2)
+
+/* ── Track geometry (world units) ────────────────────────────────────── */
+#define TRACK_HW    160.0f   /* half-width of the navigable channel */
+#define EDGE_W        4.0f   /* visual edge-stripe half-width       */
+#define PYLON_INT   500.0f   /* spacing between pylon pairs         */
+#define DRAW_DIST  6000.0f   /* furthest pylon to render            */
+
+/* ── Player physics ──────────────────────────────────────────────────── */
+#define TOP_SPEED   650.0f
+#define ACCEL       300.0f
+#define COAST_DEC   150.0f
+#define BRAKE_DEC   420.0f
+#define STEER_V     210.0f
+
+/* ── Track curve (two sine waves for organic feel) ───────────────────── */
+#define CURVE(z)  (sinf((z) * 0.00110f) * 0.38f + sinf((z) * 0.00290f) * 0.14f)
+
+/* ── Simple clamp (avoid SDL_clampf portability issues) ──────────────── */
+static inline float clampf(float v, float lo, float hi) {
+    return v < lo ? lo : v > hi ? hi : v;
+}
+
+/* ================================================================
+   Asset helpers
+   ================================================================ */
+
+typedef struct { SDL_Texture *t; int w, h; } Tex;
+
+static Tex load_tex(SDL_Renderer *r, const char *path) {
+    SDL_Surface *s = IMG_Load(path);
+    if (!s) {
+        fprintf(stderr, "IMG_Load(%s): %s\n", path, IMG_GetError());
+        return (Tex){NULL, 0, 0};
+    }
+    Tex tx = { SDL_CreateTextureFromSurface(r, s), s->w, s->h };
+    SDL_FreeSurface(s);
+    return tx;
+}
+
+/* Blit a sprite: horizontal centre at cx, bottom edge at bot, scaled by sc */
+static void blit(SDL_Renderer *r, Tex *tx, SDL_Rect *src,
+                 float cx, float bot, float sc) {
+    if (!tx || !tx->t || sc < 0.002f) return;
+    SDL_Rect s = src ? *src : (SDL_Rect){0, 0, tx->w, tx->h};
+    int dw = SDL_max(1, (int)(s.w * sc));
+    int dh = SDL_max(1, (int)(s.h * sc));
+    SDL_Rect d = { (int)cx - dw / 2, (int)bot - dh, dw, dh };
+    SDL_RenderCopy(r, tx->t, &s, &d);
+}
+
+/* Clipped horizontal line in logical coordinates */
+static void hline(SDL_Renderer *r, int y, int x0, int x1,
+                  Uint8 R, Uint8 G, Uint8 B) {
+    if (y < 0 || y >= LOG_H) return;
+    if (x0 > x1) { int t = x0; x0 = x1; x1 = t; }
+    x0 = SDL_max(x0, 0);
+    x1 = SDL_min(x1, LOG_W);
+    if (x0 >= x1) return;
+    SDL_SetRenderDrawColor(r, R, G, B, 255);
+    SDL_RenderDrawLine(r, x0, y, x1, y);
+}
+
+/* ================================================================
+   Main
+   ================================================================ */
+int main(int argc, char **argv) {
+    (void)argc; (void)argv;
+
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)          { fprintf(stderr,"SDL_Init: %s\n",SDL_GetError()); return 1; }
+    if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) { fprintf(stderr,"IMG_Init: %s\n",IMG_GetError()); return 1; }
+
+    SDL_Window   *win = SDL_CreateWindow("Jetski — Track Prototype",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIN_W, WIN_H, 0);
+    SDL_Renderer *ren = SDL_CreateRenderer(win, -1,
+        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+
+    /* All draw calls use 320×240 logical coords; SDL upscales 2× to window. */
+    SDL_RenderSetLogicalSize(ren, LOG_W, LOG_H);
+
+    /* ── Load sprites ── */
+    Tex player = load_tex(ren, "../img/player.png");
+    Tex tree   = load_tex(ren, "../img/tree.png");
+
+    /*
+     * player.png — 5 frames side-by-side, largest (4×4 tile) at left.
+     * We always draw the largest frame and let SDL scale it.
+     */
+    SDL_Rect player_src = { 0, 0, player.w / 5, player.h };
+
+    /*
+     * tree.png — 4 sprites side-by-side:
+     *   [0] large palm  [1] medium palm  [2] large pylon  [3] small pylon
+     * Frame [2] = yellow cone / track marker.
+     */
+    SDL_Rect pylon_src = { tree.w * 2 / 4, 0, tree.w / 4, tree.h };
+
+    /* ── Per-scanline tables filled each frame ── */
+    /*   road_cx[y] = screen X of road centre at row y
+         road_sc[y] = perspective scale at row y            */
+    float road_cx[LOG_H];
+    float road_sc[LOG_H];
+
+    /* ── Player state ── */
+    float player_z = 0.0f;   /* distance travelled (world units) */
+    float player_x = 0.0f;   /* lateral offset from centre       */
+    float speed    = 0.0f;   /* current forward speed            */
+
+    const Uint8 *keys = SDL_GetKeyboardState(NULL);
+    Uint64 freq = SDL_GetPerformanceFrequency();
+    Uint64 prev = SDL_GetPerformanceCounter();
+    bool running = true;
+
+    while (running) {
+        /* ── Delta time ── */
+        Uint64 now = SDL_GetPerformanceCounter();
+        float dt = (float)(now - prev) / (float)freq;
+        prev = now;
+        if (dt > 0.05f) dt = 0.05f;
+
+        /* ── Events ── */
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev))
+            if (ev.type == SDL_QUIT ||
+               (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE))
+                running = false;
+
+        /* ── Input & physics ── */
+        bool fwd  = keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP];
+        bool back = keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN];
+        float steer =
+            (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) ?  1.f :
+            (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT])  ? -1.f : 0.f;
+
+        if (fwd)        speed += ACCEL     * dt;
+        else if (back)  speed -= BRAKE_DEC * dt;
+        else            speed -= COAST_DEC * dt;
+        speed     = clampf(speed, 0.f, TOP_SPEED);
+        player_x += steer * STEER_V * dt;
+        player_z += speed * dt;
+
+        /* ================================================================
+           Render
+           ================================================================ */
+
+        /* 1. Sky — clear fills the whole logical surface with sky blue */
+        SDL_SetRenderDrawColor(ren, 108, 183, 255, 255);
+        SDL_RenderClear(ren);
+
+        /* Thin horizon strip (darker water at the vanishing line) */
+        SDL_SetRenderDrawColor(ren, 18, 100, 175, 255);
+        SDL_Rect hz = { 0, HORIZON_Y - 2, LOG_W, 4 };
+        SDL_RenderFillRect(ren, &hz);
+
+        /* 2. Road scanlines — integrate curve top-to-bottom (far → near)
+              This mirrors the classic Outrun scanline renderer:
+              each row accumulates lateral displacement from the curve
+              so the road visually bends left / right.                   */
+        float cx_acc = 0.0f;
+
+        for (int y = HORIZON_Y; y < LOG_H; y++) {
+            float dy   = (float)(y - HORIZON_Y) + 0.5f;
+            float z    = CAM_H * CAM_D / dy;     /* world depth for row y */
+            float sc   = CAM_D / z;              /* perspective scale      */
+            float absz = player_z + z;
+
+            /* Accumulate curve shift (far rows shift less, near rows more) */
+            cx_acc += CURVE(absz) * sc * 1.5f;
+
+            float cx = (float)SCR_CX - player_x * sc - cx_acc;
+            road_cx[y] = cx;
+            road_sc[y] = sc;
+
+            /* Alternating stripes keyed to world Z → animate with speed */
+            int stripe = (int)(absz / 100.f) & 1;
+
+            /* Water colour (two shades of blue for motion cue) */
+            Uint8 wr = 14, wg = stripe ? 90 : 108, wb = stripe ? 165 : 185;
+            /* Track channel (slightly lighter — still ocean) */
+            Uint8 tr = 22, tg = stripe ? 120 : 140, tb = stripe ? 200 : 220;
+
+            int rl = (int)(cx - TRACK_HW * sc);
+            int rr = (int)(cx + TRACK_HW * sc);
+            int ew = SDL_max(1, (int)(EDGE_W * sc));
+
+            hline(ren, y, 0,        rl,      wr, wg, wb);   /* water left  */
+            hline(ren, y, rl,       rr,      tr, tg, tb);   /* channel     */
+            hline(ren, y, rr,       LOG_W,   wr, wg, wb);   /* water right */
+            hline(ren, y, rl,       rl + ew, 220, 232, 255); /* edge stripe */
+            hline(ren, y, rr - ew, rr,       220, 232, 255); /* edge stripe */
+        }
+
+        /* 3. Pylons — draw far-to-near (painter's algorithm)
+              We look up road_cx/road_sc at the pylon's projected row so
+              the pylons sit precisely on the rendered track edges, including
+              any curve displacement accumulated above.                       */
+        {
+            int k_near = (int)ceilf( player_z            / PYLON_INT);
+            int k_far  = (int)floorf((player_z + DRAW_DIST) / PYLON_INT);
+            if (k_far > k_near + 25) k_far = k_near + 25;
+
+            for (int k = k_far; k >= k_near; k--) {
+                float absz = (float)k * PYLON_INT;
+                float relz = absz - player_z;
+                if (relz < 2.f) continue;
+
+                /* Project to screen Y */
+                float sc = CAM_D / relz;
+                float sy = (float)HORIZON_Y + CAM_H * sc;
+                int   iy = (int)sy;
+                if (iy < HORIZON_Y || iy >= LOG_H) continue;
+
+                /* Use precomputed road centre at this row for exact X */
+                float cx_l = road_cx[iy] - TRACK_HW * road_sc[iy];
+                float cx_r = road_cx[iy] + TRACK_HW * road_sc[iy];
+
+                float psc = sc * 1.25f;   /* slight boost so cone fills nicely */
+
+                blit(ren, &tree, &pylon_src, cx_l, sy, psc);
+                blit(ren, &tree, &pylon_src, cx_r, sy, psc);
+            }
+        }
+
+        /* 4. Player sprite — always centred at bottom of the water region */
+        blit(ren, &player, &player_src,
+             (float)SCR_CX, (float)(LOG_H - 4), 1.5f);
+
+        /* 5. HUD bar (drawn last so it's always on top) */
+        SDL_SetRenderDrawColor(ren, 8, 8, 24, 255);
+        SDL_Rect hud_rect = { 0, 0, LOG_W, HUD_H };
+        SDL_RenderFillRect(ren, &hud_rect);
+
+        SDL_RenderPresent(ren);
+    }
+
+    /* Cleanup */
+    if (player.t) SDL_DestroyTexture(player.t);
+    if (tree.t)   SDL_DestroyTexture(tree.t);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    IMG_Quit();
+    SDL_Quit();
+    return 0;
+}

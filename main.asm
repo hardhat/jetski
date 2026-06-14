@@ -198,6 +198,7 @@ GameLoop:
 	CALL wait_end_vblank
 
 	CALL ReadKeyboard
+	CALL UpdatePhysics
 
 	JP GameLoop
 
@@ -460,6 +461,78 @@ PrintDigit:
 	LD (Cursor),DE
 	RET
 
+UpdatePhysics:
+	; Update the physics of the game here, including player movement, collision detection, etc. 
+	;This is called once per frame after reading the keyboard input and before drawing the next frame.
+	; First update the player's speed based on the throttle input
+	; Then update the player's position based on the speed and steering input
+	; Then check for collisions with the environment and update the game state accordingly (e.g.
+	; if the player hits a tree, reset their position and speed)
+	LD A,(Throttle)
+	CP 0
+	JR Z,NoThrottle
+	; If throttle is not zero, increase speed by 1, up to a maximum of 10.
+	LD HL,Speed
+	LD A,(HL)
+	CP 10
+	JR NC,MaxSpeed
+	INC A
+	LD (HL),A
+	JR UpdatePosition
+MaxSpeed:
+	LD (HL),10
+	JR UpdatePosition
+NoThrottle:
+	; If throttle is zero, decrease speed by 1, down to a minimum of 0.
+	LD HL,Speed
+	LD A,(HL)
+	CP 0
+	JR Z,MinSpeed
+	DEC A
+	LD (HL),A
+	JR UpdatePosition
+MinSpeed:
+	LD (HL),0
+	JR UpdatePosition
+UpdatePosition:
+	; Update the player's position based on the current speed and steering input.
+	; This is where you would use the sine and cosine functions to calculate the 
+	; change in x and y based on the player's current angle and speed, and then update 
+	; the player's position accordingly.
+	LD A,(Steer)
+	CP 0
+	JR Z,NoSteer
+	; If steering is not zero, update the player's angle based on the steering input.
+	; For example, if the player is steering left, decrease the angle by a certain amount, and if they are steering right, increase the angle by a certain amount.
+	; The angle should wrap around from 255 back to 0, since we are using an 8-bit value to represent the angle.
+	; After updating the angle, use the sine and cosine functions to calculate the change in x and y based on the new angle and the current speed, and then update the player's position accordingly.
+	; Note: The player's angle and position should be stored in memory, and you would need to load those values, update them, and then store them back in memory.
+	; For example, you could store the player's angle in a variable called PlayerAngle, and the player's x and y position in variables called PlayerX and PlayerY. You would then load those values, update them based on the steering and speed, and then store them back in memory.
+	; This is just a placeholder implementation, and you would need to fill in the actual calculations based on the player's current angle and speed, and how much you want the steering to affect the angle.
+	LD HL,PlayerAngle
+	LD A,(HL)
+	CP 128
+	JR NC,SteerRight
+	; Steer left
+	DEC A
+	JR UpdateAngle
+SteerRight:
+	INC A ; Steer right
+UpdateAngle:
+	LD (HL),A
+	; Now calculate the change in x and y based on the new angle and current speed, and update the player's position accordingly.
+	; This is where you would call the sine and cosine functions with the player's angle to get the change in x and y, and then update the player's position based on the current speed.
+	; For example, you could call sine_88 with the player's angle to get the change in y, and cosine_88 to get the change in x, and then
+	; multiply those values by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
+	; Note: You would need to implement the sine_88 and cosine_88 functions in math.asm, and they would return the sine and cosine of the input angle as 8.8 fixed point numbers, which you would then need to multiply by the player's speed (also in 8
+	; .8 fixed point) to get the change in position, and then update the player's x and y position (also in 8.8 fixed point) accordingly.
+	; This is just a placeholder implementation, and you would need to fill in the actual calculations
+	; based on how you are representing the player's angle, speed, and position in memory, and how you want the steering to affect the angle.
+	; For example, if the player's speed is stored in a variable called PlayerSpeed, and
+	; the player's x and y position are stored in variables called PlayerX and PlayerY, you would load those values, call the sine and cosine functions with the player's angle to get the change in x and y, multiply those by the player's speed to get the actual change in position, and then update the player's x and y position accordingly.
+	
+	RET
+
 ReadKeyboard:
 	LD DE,keyboard_buffer
 	LD BC,16
@@ -475,6 +548,7 @@ ReadKeyboard:
 ReadKeyboardLoop:
 	LD HL,keyboard_buffer
 	LD A,(HL)
+	LD C,A
 	CP KB_ESC
 	CALL Z,HandleEsc
 	CP KB_UP_ARROW
@@ -507,23 +581,28 @@ HandleEsc:
 HandleLeft:
 	LD A,-1	; 0xff in 8-bit signed is -1
 	LD (Steer),A
+	LD A,C
 	RET
 HandleRight:
 	LD A,1
 	LD (Steer),A
+	LD A,C
 	RET
 HandleUp:
 	LD A,1
 	LD (Throttle),A
+	LD A,C
 	RET
 HandleDown:
 	LD A,-1
 	LD (Throttle),A
+	LD A,C
 	RET
 HandleSpace:
 	; Handle space key press by accelerating the jetski.
 	LD A,1
 	LD (Throttle),A
+	LD A,C
 	RET
 HandleEnter:
 	; Handle enter key press by resetting the game or performing another action.
@@ -533,6 +612,9 @@ Steer:
 	DEFB 0
 Throttle:
 	DEFB 0
+Speed:
+	DEFW 0
+
 
 keyboard_error_message:
 	DB "Error reading keyboard", 13, 10

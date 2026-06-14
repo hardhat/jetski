@@ -1,0 +1,11 @@
+{
+  "name": "The_River",
+  "difficulty": 4,
+  "segments": [
+    {
+      "curve": 0,
+      "length": 30000,
+      "flags": 49
+    }
+  ]
+}
