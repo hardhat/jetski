@@ -408,7 +408,7 @@ WordPlus16:
 	INC HL
 	LD A,(HL)
 	ADC A,0
-	LD (HL),a
+	LD (HL),A
 	INC HL
 	RET
 
@@ -436,6 +436,12 @@ UpdateFrame: ; In: Old frame in A, Out: new frame in A
 
 PrintDecAt:	; Print a 16-bit number in HL to the screen at the specified position in DE
 	LD (Cursor),DE
+	JR PrintDec
+PrintDec16:
+	LD BC,-10000
+	CALL SubCount
+	LD BC,-1000
+	CALL SubCount
 
 PrintDec:	; Print a 16-bit number in HL to the screen at the current cursor position
 	LD BC,-100
@@ -453,10 +459,11 @@ SubCountLoop:
 	JR C,SubCountLoop
 	OR A	;Clear the carry flag.
 	SBC HL,BC
-	;Note: " 0123456789:+" is the character set used, so '0' is tile 1.
+	;Note: "0123456789:/" is the character set used, so '0' is tile 192.
 PrintDigit:
 	LD DE,(Cursor)
-	LD (DE),a
+	ADD A,192
+	LD (DE),A
 	INC DE
 	LD (Cursor),DE
 	RET
