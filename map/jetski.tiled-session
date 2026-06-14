@@ -11,7 +11,7 @@
     "fileStates": {
         "baselayer.tmx": {
             "scale": 2.1078125,
-            "selectedLayer": 1,
+            "selectedLayer": 2,
             "viewCenter": {
                 "x": 162.96515937731655,
                 "y": 90.85248332097852
@@ -26,6 +26,14 @@
             "scaleInEditor": 1
         },
         "character.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "numbers.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "ramp.tsx": {
             "scaleInDock": 1,
             "scaleInEditor": 1
         },
@@ -49,19 +57,23 @@
     "map.tileWidth": 16,
     "map.width": 20,
     "openFiles": [
-        "character.tsx",
         "baselayer.tmx",
+        "character.tsx",
         "bg.tsx",
-        "tree.tsx"
+        "tree.tsx",
+        "ramp.tsx",
+        "numbers.tsx"
     ],
     "project": "jetski.tiled-project",
     "recentFiles": [
-        "bg_shore_anim.tsx",
-        "shore_anim_demo.tmx",
-        "character.tsx",
+        "numbers.tsx",
+        "ramp.tsx",
         "tree.tsx",
         "bg.tsx",
-        "baselayer.tmx"
+        "character.tsx",
+        "baselayer.tmx",
+        "bg_shore_anim.tsx",
+        "shore_anim_demo.tmx"
     ],
     "tileset.lastUsedFormat": "tsx",
     "tileset.tileSize": {
