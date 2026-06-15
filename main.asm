@@ -703,13 +703,23 @@ BaseLayer0004: ;sprite layer (trees, ramps, etc)
 BaseLayer0004Size EQU $-BaseLayer0004
 
 Palette:
+PlayerPalette:
 	incbin "img/player.ztp"
+PlayerPaletteSize EQU $-PlayerPalette
+BgPalette:
 	incbin "img/bg.ztp"
+BgPaletteSize EQU $-BgPalette
+TreePalette:
 	incbin "img/tree.ztp"
+TreePaletteSize EQU $-TreePalette
+RampPalette:
 	incbin "img/ramp.ztp"
 	ds 24	; Pad the pallete to 16 entries (32 bytes) since the hardware reads in 16 entry chunks
+RampPaletteSize EQU $-RampPalette
+NumbersPalette:
 	incbin "img/numbers.ztp"
 	ds 16	; Pad the palette to 16 entries (32 bytes) since the hardware reads in 16 entry chunks
+NumbersPaletteSize EQU $-NumbersPalette
 PaletteSize EQU $-Palette
 
 TileSet:
