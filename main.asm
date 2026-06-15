@@ -216,6 +216,7 @@ GameLoop:
 
 	CALL UpdateHud
 	CALL UpdateShore
+	CALL UpdateSprites
 
 	; Wait for the next frame
 	CALL wait_end_vblank
@@ -811,6 +812,12 @@ HandleEnterRelease:
 	; Handle enter key release by resetting the game or performing another action.
 	RET
 
+UpdateSprites:
+	; Update the sprites based on the player's position, speed, etc. 
+	; For example, you could move enemy sprites towards the player, animate the player's sprite based on speed, etc.
+	
+	RET
+
 CourseName:
 	DEFW 0	; Pointer to the course name string
 CourseDifficulty:
@@ -894,6 +901,7 @@ SpriteTileMap:
 
 ; With tiles, always skip number 0 when making sprites
 BoatSpriteList: ; Different scales of boat sprites for different distances from the viewer
+	db 5 ; Number of different boat sprites
 	defw BoatSprite1, BoatSprite2, BoatSprite3, BoatSprite4, BoatSprite5
 ; Each boat sprite is a different combination of 16x16 tiles, arranged in rows and columns
 BoatSprite1: ; Closest, most detailed boat sprite (uses 16 tiles, 4x4)
@@ -924,19 +932,25 @@ BoatSprite5: ; Very far distance boat sprite (uses 4 tiles, 2x2)
 	dw 60,61 ; bottom row of tiles
 
 BuoySpriteList: ; Different scales of buoy sprites for different distances from the viewer
+	db 4 ; Number of different buoy sprites
 	defw BuoySprite1, BuoySprite2, BuoySprite3, BuoySprite4
 ; Each buoy sprite is a single 16x16 tile
 TreeTileBase EQU 128 ; Base tile index for tree sprites in the tile set
 BuoySprite1: ; Closest, most detailed buoy sprite
+	db 1,1 ; 1 column, 1 row
 	dw TreeTileBase+8+6
 BuoySprite2: ; Medium distance buoy sprite
+	db 1,1 ; 1 column, 1 row
 	dw TreeTileBase+6
 BuoySprite3: ; Far distance buoy sprite
+	db 1,1 ; 1 column, 1 row
 	dw TreeTileBase+8+7
 BuoySprite4: ; Farthest, least detailed buoy sprite
+	db 1,1 ; 1 column, 1 row
 	dw TreeTileBase+7
 
 TreeSpriteList: ; Different scales of tree sprites for different distances from the viewer
+	db 5 ; Number of different tree sprites
 	defw TreeSprite1, TreeSprite2, TreeSprite3, TreeSprite4, TreeSprite5
 ; Each tree sprite is a different combination of 16x16 tiles, arranged in rows and columns
 TreeSprite1: ; Closest, most detailed tree sprite (uses 8 tiles, 2x4)
