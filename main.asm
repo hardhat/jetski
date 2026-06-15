@@ -892,6 +892,80 @@ SpriteTileMap:
 	defb 0
 	defw 0 ; End of table
 
+; With tiles, always skip number 0 when making sprites
+BoatSpriteList: ; Different scales of boat sprites for different distances from the viewer
+	defw BoatSprite1, BoatSprite2, BoatSprite3, BoatSprite4, BoatSprite5
+; Each boat sprite is a different combination of 16x16 tiles, arranged in rows and columns
+BoatSprite1: ; Closest, most detailed boat sprite (uses 16 tiles, 4x4)
+	db 4,4 ; 4 columns, 4 rows
+	dw -0,1,2,0 ; top row of tiles
+	dw 0,17,18,0 ; second row of tiles
+	dw 32,33,34,35 ; third row of tiles	
+	dw 48,49,50,51 ; bottom row of tiles
+BoatSprite2: ; Medium distance boat sprite (uses 12 tiles, 3x4)
+	db 3,4 ; 3 columns, 4 rows
+	dw 0,5,6 ; top row of tiles
+	dw 20,21,22 ; second row of tiles
+	dw 36,37,38 ; third row of tiles
+	dw 52,53,54 ; bottom row of tiles
+BoatSprite3: ; Far distance boat sprite (uses 9 tiles, 3x3)
+	db 3,3 ; 3 columns, 3 rows
+	dw 23,24,25 ; top row of tiles
+	dw 39,40,41 ; middle row of tiles
+	dw 55,56,57 ; bottom row of tiles
+BoatSprite4: ; Farthest, least detailed boat sprite (uses 6 tiles, 2x3)
+	db 2,3 ; 2 columns, 3 rows
+	dw 26,27 ; top row of tiles
+	dw 42,43 ; middle row of tiles
+	dw 58,59 ; bottom row of tiles
+BoatSprite5: ; Very far distance boat sprite (uses 4 tiles, 2x2)
+	db 2,2 ; 2 columns, 2 rows
+	dw 44,45 ; top row of tiles
+	dw 60,61 ; bottom row of tiles
+
+BuoySpriteList: ; Different scales of buoy sprites for different distances from the viewer
+	defw BuoySprite1, BuoySprite2, BuoySprite3, BuoySprite4
+; Each buoy sprite is a single 16x16 tile
+TreeTileBase EQU 128 ; Base tile index for tree sprites in the tile set
+BuoySprite1: ; Closest, most detailed buoy sprite
+	dw TreeTileBase+8+6
+BuoySprite2: ; Medium distance buoy sprite
+	dw TreeTileBase+6
+BuoySprite3: ; Far distance buoy sprite
+	dw TreeTileBase+8+7
+BuoySprite4: ; Farthest, least detailed buoy sprite
+	dw TreeTileBase+7
+
+TreeSpriteList: ; Different scales of tree sprites for different distances from the viewer
+	defw TreeSprite1, TreeSprite2, TreeSprite3, TreeSprite4, TreeSprite5
+; Each tree sprite is a different combination of 16x16 tiles, arranged in rows and columns
+TreeSprite1: ; Closest, most detailed tree sprite (uses 8 tiles, 2x4)
+	db 2,4 ; 2 columns, 4 rows
+	dw TreeTileBase+0, TreeTileBase+1 ; top row of tiles
+	dw TreeTileBase+8, TreeTileBase+9 ; second row of tiles
+	dw TreeTileBase+16, TreeTileBase+17 ; third row of tiles	
+	dw TreeTileBase+24, 0 ; bottom row of tiles
+TreeSprite2: ; Medium distance tree sprite (uses 8 tiles, 2x4)
+	db 2,4 ; 2 columns, 4 rows
+	dw TreeTileBase+2, TreeTileBase+3 ; top row of tiles
+	dw TreeTileBase+10, TreeTileBase+11 ; second row of tiles
+	dw TreeTileBase+18, TreeTileBase+19 ; third row of tiles	
+	dw TreeTileBase+26, 0 ; bottom row of tiles
+TreeSprite3: ; Far distance tree sprite (uses 6 tiles, 2x3)
+	db 2,3 ; 2 columns, 3 rows
+	dw TreeTileBase+12, TreeTileBase+13 ; top row of tiles
+	dw TreeTileBase+20, TreeTileBase+21 ; middle row of tiles	
+	dw TreeTileBase+28, 0 ; bottom row of tiles
+TreeSprite4: ; Farthest, least detailed tree sprite (uses 2 tiles, 1x2)
+	db 1,2 ; 1 columns, 2 rows
+	dw TreeTileBase+22 ; top row of tiles
+	dw TreeTileBase+30 ; bottom row of tiles
+TreeSprite5: ; Very far distance tree sprite (uses 2 tiles, 1x2)
+	db 1,2 ; 1 column, 2 rows
+	dw TreeTileBase+23 ; top row of tiles
+	dw TreeTileBase+31 ; bottom row of tiles
+
+
 TileMapBg:
 BaseLayer0000: ;bg
 	incbin "map/baselayer0000.ztm"
