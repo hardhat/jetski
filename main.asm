@@ -814,9 +814,213 @@ HandleEnterRelease:
 
 UpdateSprites:
 	; Update the sprites based on the player's position, speed, etc. 
-	; For example, you could move enemy sprites towards the player, animate the player's sprite based on speed, etc.
+	; Start by zeroing out the sprite table for this frame
+	LD A,(SpriteTableCount) ; The sprite table output
+	LD H,0
+	LD L,A
+	ADD HL,HL
+	ADD HL,HL
+	ADD HL,HL ; A*8 for the size of each sprite entry
+	LD C,A
+	LD B,0
+	LD HL,(SpriteTable)
+	LD (NextSpriteEntry),HL	; Start of free sprites
+	LD (HL),0
+	LD D,H
+	LD E,L
+	INC DE
+	LDIR
+	XOR A
+	LD (SpriteTableCount),A
+	; Now ready to build the sprites.
+
+	CALL BuildCourseSegmentSprites
+	CALL BuildPlayerSprite
 	
 	RET
+
+BuildCourseSegmentSprites:
+	; Build sprites for the current course segment based on the player's position and the segment's curve, etc. 
+	; For now, just build some placeholder sprites to represent the course segments.
+	RET
+
+BuildPlayerSprite:
+	; Build the player's sprite based on the player's position, speed, etc.
+
+	;
+
+	RET
+
+; =================================================================================================
+; Adds a multisprite entry, scaled based on the y value of the sprite.  The sprites is anchored at the bottom center, so the x and y 
+; position refer to the bottom center of the sprite.  The tile number is for the top left tile of the sprite, and the sprite is made 
+; up of a grid of tiles as defined in the boat sprite list.  The scale is determined by which boat sprite is used, with larger sprites 
+; used for closer objects and smaller sprites used for farther objects.
+; Input: HL = pointer to the composite sprite definition which includes the {scale_count, scale_list[]} which point to {column_count, row_count, tile numbers[]} }
+;         DE = x position of the sprite in screen coordinates
+;         BC = y position of the sprite in screen coordinates
+; since sprits are displayed between y positions 64 and 240, we can use the y position to determine the scale of the sprite to use, with closer objects 
+; (y closer to 240) using larger sprites and farther objects (y closer to 64) using smaller sprites.
+AddScaledCompositeSprite:
+	LD A,(HL) ; Get the number of different scales for this sprite
+	INC HL
+	PUSH BC ; y position
+	PUSH DE ; x position
+	PUSH HL ; Save the pointer to the composite sprite definition for later use after we determine which scale to use
+	PUSH AF ; Save the scale count for later use after we determine which scale to use
+	; Determine which scale to use based on the y position in BC
+	LD H,B
+	LD L,C
+	LD DE,-64
+	ADD HL,DE
+	JP M,UseSmallestSprite ; If y < 64, use the smallest sprite
+	EX DE,HL ; Adjusted y position in DE
+	CALL DE_Times_A ; Get the scale index by dividing the adjusted y position by the range of y positions (240-64=176) and multiplying by the number of scales
+	; Now DE is y pos - 64, and HL is DE*sprite_count
+	LD D,176
+	CALL Div_HL_D ; Divide by 176 to get the scale index
+	; Now HL the index of the scale to use in the scale list
+	; check for overflow just in case
+	LD A,L
+	POP BC ; B=number of scales
+	CP B
+	JR C,UseScale
+	LD HL,0 ; If overflow, use the first entry in the scale list (largest sprite)
+	JR UseScale
+UseSmallestSprite:
+	LD H,0
+	LD L,A
+	DEC L ; Use the last entry in the scale list (smallest sprite)
+UseScale:
+	ADD HL,HL ; Multiply by 2 for the size of each scale entry
+	POP BC ; Get the table pointer back in BC
+	ADD HL,BC ; Add the base address of the scale list to get the pointer to the scale entry to use
+	LD A,(HL) ; entry LSB
+	INC HL
+	LD H,(HL) ; entry MSB
+	LD L,A
+	; Now HL points to the scale entry to use, which includes the column count, row count, and tile numbers for the sprite at this scale
+	LD B,(HL) ; Get the column count
+	INC HL
+	LD C,(HL) ; Get the row count
+	INC HL
+	; Now HL points to the tile numbers for the sprite, and BC has the column and row count for the sprite at the appropriate scale.
+	; Calculate the location of the first sprite, based on the bottom center anchor point and the column and row count of the sprite
+	LD A,B
+	LD (SCS_Columns),A ; Save the column count
+	ADD A,A
+	ADD A,A
+	ADD A,A ; A = column count * 16 / 2 for the x offset from the center
+	EX DE,HL ;DE = tile table
+	POP HL ; Get x position back in HL
+	NEG  ; Negate A to get the offset to the left for the x position of the first sprite
+	ADD A,L
+	LD L,A
+	LD A,0xff ; Set the high bit of the tile number for sprites
+	SBC A,H
+	LD H,A
+	LD (SCS_X),HL ; Save the x position for the first sprite in screen coordinates
+	LD (SCS_X_Left),HL ; Also save the leftmost x position for this sprite for later use in culling
+	POP HL ; Get y position back in HL
+	LD A,C ; Get the row count for the sprite
+	ADD A,A
+	ADD A,A
+	ADD A,A
+	ADD A,A ; A = row count * 16 for the y offset from the center
+	LD H,A
+	LD A,L
+	SUB A,H
+	LD L,A
+	LD H,0
+	LD (SCS_Y),HL ; Save the y position for the first sprite in screen coordinates
+	; Now we have the starting position for the first sprite in screen coordinates in SCS_X and SCS_Y
+	; DE= tile table, and B=columns and C=rows.
+MakeSpritesLoop:
+	LD A,(DE) ; Get the tile number for this sprite
+	INC DE
+	OR A
+	JR Z,SkipSprite ; If tile number is 0, skip this sprite (used for blank spaces in the composite sprite)
+	; Add a sprite entry for this tile at the current position in SCS_X and SCS_Y
+	PUSH BC ; Save column and row count for later use
+	PUSH DE ; Save the pointer to the tile table for later use
+	LD HL,(NextSpriteEntry) ; Get the next free sprite entry
+	LD DE,(SCS_X) ; Get the x position for this sprite
+	LD (HL),E ; Set the x position for this sprite
+	INC HL
+	LD (HL),D ; Set the x position for this sprite
+	INC HL
+	LD DE,(SCS_Y) ; Get the y position for this sprite
+	LD (HL),E ; Set the y position for this sprite
+	INC HL
+	LD (HL),D ; Set the y position for this sprite
+	INC HL
+	LD (HL),A ; Set the tile number for this sprite
+	INC HL
+
+	LD C,0
+	CP  64
+	JR C,@WriteFlags
+	INC C
+	CP 128
+	JR C,@WriteFlags
+	INC C
+	CP 160
+	JR C,@WriteFlags
+	INC C
+	CP 192
+	JR C,@WriteFlags
+	INC C
+@WriteFlags:
+	LD A,C
+	ADD A,A	;x16
+	ADD A,A
+	ADD A,A
+	ADD A,A
+	; control bits in layer 1 are: [7-4] palette, 3=flip x, 2=flip y, 1=unused, 0=high bit of index 
+	LD  (HL),A
+	INC HL
+	LD (HL),0 ; Zero out sprite options for now
+	INC HL
+	LD (HL),0
+	INC HL
+	LD (NextSpriteEntry),HL ; Update the next free sprite entry
+
+	POP DE ; Get the tile table pointer back in DE
+	POP BC ; Get the column and row count back in BC
+SkipSprite:
+	LD HL,(SCS_X)
+	PUSH BC
+	LD BC,16
+	ADD HL,BC ; Move to the next column position for the next sprite
+	LD (SCS_X),HL
+	POP BC
+
+	DJNZ MakeSpritesLoop ; Loop until we've processed all columns for this sprite
+
+	; Now reset the column position and move to the next row for the next sprite
+	LD HL,(SCS_X_Left) ; Reset x position to the leftmost position for this sprite
+	LD (SCS_X),HL
+	LD HL,(SCS_Y)
+	PUSH BC
+	LD BC,16
+	ADD HL,BC ; Move to the next row position for the next sprite
+	LD (SCS_Y),HL
+	POP BC
+	LD A,(SCS_Columns) ; Check if we've processed all rows for this sprite
+	LD B,A
+	DEC C
+	JR NZ,MakeSpritesLoop ; If not, loop back to process the next row
+
+	RET
+
+SCS_X:
+	DEFW 0	; Scaled composite sprite x position for the current segment
+SCS_Y:
+	DEFW 0	; Scaled composite sprite y position for the current segment
+SCS_Columns:
+	DEFB 0	; Number of columns in the current sprite
+SCS_X_Left:
+	DEFW 0	; The leftmost x position for the current sprite
 
 CourseName:
 	DEFW 0	; Pointer to the course name string
@@ -895,7 +1099,9 @@ SpriteTileMap:
 	defw 0xffff
 	defb 0
 	defw TileMapSprites
+SpriteTable:
 	defw 0xffff
+SpriteTableCount:
 	defb 0
 	defw 0 ; End of table
 
