@@ -842,12 +842,86 @@ UpdateSprites:
 BuildCourseSegmentSprites:
 	; Build sprites for the current course segment based on the player's position and the segment's curve, etc. 
 	; For now, just build some placeholder sprites to represent the course segments.
+
+	; iterate through the next few segments and add sprites based on the curve and distance from the player and flags
+	LD HL,(Segment)
+	LD DE,(CourseSegmentPtr)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	ADD HL,DE ; HL = pointer to current segment
+	LD C,5 ; Look at the next 5 segments for sprites to add
+@SegmentLoop:
+	LD A,(HL) ; Get curve
+	INC HL
+	LD E,(HL) ; Get length
+	INC HL
+	LD D,(HL)
+	INC HL
+	LD B,(HL) ; Get flags
+	INC HL
+	; For now, just add a sprite based on the curve value as a placeholder
+	; In the future, we can use the curve, length, and flags to determine what
+	; sprites to add for the course segment, such as shore sprites, obstacle sprites, etc.
+	PUSH HL
+	PUSH BC
+	LD HL,(WorldPosZ)
+	EX DE,HL ; DE = player z position, HL = segment z length
+	OR A
+	SBC HL,DE ; HL = segment z position relative to player
+	LD B,H
+	LD C,L
+	; Add prespective
+	; HORIZON=64 pixels, Y_WORLD=120 cm above horizon, DIST=208 (75 degree FOV), SCALE=35 for 1.0x scale
+	; int y = HORIZON + (Y_WORLD * DIST * SCALE) / z; // Perspective: far → near horizon, near → bottom
+	LD HL,0x5480 ; screen center x postion
+	LD A, 0xD ; Y_WORLD * DIST * SCALE = 120*208*35 = 873600 = 0xD5480, so we start with the high byte of that value in A
+	CALL Div24_16 ; Divide by z (in BC) to get the perspective y value, result in HL
+	LD DE,64
+	ADD HL,DE ; Add the horizon value to get the final y position in screen coordinates
+	EX DE,HL ; DE = y position in screen coordinates
+	POP AF
+	PUSH AF ; Get the flags into A
+	PUSH DE ; Save y position for later use in determining sprite scale
+	; For now set BC to x=240 + 10m * y scale for the sprite, but eventually we can use the curve and flags to determine the x position of the sprite as well
+	LD HL,240
+	BIT 0,A ; Check if this segment has a curve to the right
+	JR Z,@NoRightCurve
+	LD BC,5*35 ; Placeholder for curve-based x position adjustment for right curve
+	ADD HL,BC
+	JR @XPositionSet
+@NoRightCurve:
+	BIT 1,A ; Check if this segment has a curve to the left
+	JR Z,@NoLeftCurve
+	LD BC,5*35 ; Placeholder for curve-based x position adjustment for left curve
+	ADD HL,BC
+@NoLeftCurve:
+	; If no curve, just put the sprite in the center
+@XPositionSet:
+	LD B,H
+	LD C,L	; BC = x position in screen coordinates
+	POP DE ; Get y position back in DE
+	LD HL,TreeSpriteList
+	CALL AddScaledCompositeSprite
+	
+	; Next segment
+	POP BC
+	POP HL
+
+	DEC C
+	JR NZ,@SegmentLoop
+
 	RET
 
 BuildPlayerSprite:
 	; Build the player's sprite based on the player's position, speed, etc.
 
-	;
+	LD HL,240	; screen center x postion
+	LD BC,(Steer)
+	ADD HL,BC	; Adjust x position based on steering input
+	EX DE,HL	; DE = x position in screen coordinates
+	LD BC,240-16 ; bottom of boat sprite is 16 pixels from the bottom of the screen
+	LD HL,BoatSpriteList
+	CALL AddScaledCompositeSprite
 
 	RET
 
