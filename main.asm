@@ -815,28 +815,33 @@ HandleEnterRelease:
 UpdateSprites:
 	; Update the sprites based on the player's position, speed, etc. 
 	; Start by zeroing out the sprite table for this frame
+	LD HL,(SpriteTable)
+	LD (NextSpriteEntry),HL	; Start of free sprites
+
 	LD A,(SpriteTableCount) ; The sprite table output
+	OR A
+	JR Z,NoSpritesToUpdate
+	EX DE,HL ; DE = start of sprite table, HL = number of sprites to update
 	LD H,0
 	LD L,A
 	ADD HL,HL
 	ADD HL,HL
 	ADD HL,HL ; A*8 for the size of each sprite entry
-	LD C,A
-	LD B,0
-	LD HL,(SpriteTable)
-	LD (NextSpriteEntry),HL	; Start of free sprites
+	LD B,H
+	LD C,L
+	EX DE,HL ; HL = start of sprite table
 	LD (HL),0
 	LD D,H
 	LD E,L
 	INC DE
 	LDIR
+NoSpritesToUpdate:
 	XOR A
 	LD (SpriteTableCount),A
 	; Now ready to build the sprites.
-
 	CALL BuildCourseSegmentSprites
 	CALL BuildPlayerSprite
-	
+
 	RET
 
 BuildCourseSegmentSprites:
@@ -882,18 +887,35 @@ BuildCourseSegmentSprites:
 	POP AF
 	PUSH AF ; Get the flags into A
 	PUSH DE ; Save y position for later use in determining sprite scale
-	; For now set BC to x=240 + 10m * y scale for the sprite, but eventually we can use the curve and flags to determine the x position of the sprite as well
+	; For now set BC to x=240 + 500cm * WORLD * SCALE / z for the sprite, but eventually we can use the curve and flags to determine the x position of the sprite as well
 	LD HL,240
 	BIT 0,A ; Check if this segment has a curve to the right
 	JR Z,@NoRightCurve
-	LD BC,5*35 ; Placeholder for curve-based x position adjustment for right curve
+	PUSH AF
+	PUSH HL
+	LD HL,0x8AC0 ; 500cm * WORLD * SCALE = 500*35=17500=0x8AC0, so we start with the high byte of that value in A
+	LD A,0x37 ; and the low byte in A after the call to Div24_16
+	CALL Div24_16 ; Divide by z (in BC) to get the perspective x
+	LD B,H
+	LD C,L
+	POP HL
+	POP AF
 	ADD HL,BC
 	JR @XPositionSet
 @NoRightCurve:
 	BIT 1,A ; Check if this segment has a curve to the left
 	JR Z,@NoLeftCurve
-	LD BC,5*35 ; Placeholder for curve-based x position adjustment for left curve
-	ADD HL,BC
+	PUSH AF
+	PUSH HL
+	LD HL,0x8AC0 ; 500cm * WORLD * SCALE = 500*35=17500=0x8AC0, so we start with the high byte of that value in A
+	LD A,0x37 ; and the low byte in A after the call to Div24_16
+	CALL Div24_16 ; Divide by z (in BC) to get the perspective x
+	LD B,H
+	LD C,L
+	POP HL
+	POP AF
+	OR A
+	SBC HL,BC	; Subtract from screen center for left curve
 @NoLeftCurve:
 	; If no curve, just put the sprite in the center
 @XPositionSet:
@@ -987,12 +1009,12 @@ UseScale:
 	ADD A,A ; A = column count * 16 / 2 for the x offset from the center
 	EX DE,HL ;DE = tile table
 	POP HL ; Get x position back in HL
-	NEG  ; Negate A to get the offset to the left for the x position of the first sprite
-	ADD A,L
-	LD L,A
-	LD A,0xff ; Set the high bit of the tile number for sprites
-	SBC A,H
-	LD H,A
+	PUSH BC ; Save row count for later use
+	LD B,0
+	LD C,A
+	OR A
+	SBC HL,BC ; Move left by the x offset to get the leftmost x position for the first sprite
+	POP BC ; Get column count back in BC
 	LD (SCS_X),HL ; Save the x position for the first sprite in screen coordinates
 	LD (SCS_X_Left),HL ; Also save the leftmost x position for this sprite for later use in culling
 	POP HL ; Get y position back in HL
@@ -1058,6 +1080,9 @@ MakeSpritesLoop:
 	LD (HL),0
 	INC HL
 	LD (NextSpriteEntry),HL ; Update the next free sprite entry
+	LD A,(SpriteTableCount)
+	INC A
+	LD (SpriteTableCount),A ; Increment the sprite count for this layer
 
 	POP DE ; Get the tile table pointer back in DE
 	POP BC ; Get the column and row count back in BC

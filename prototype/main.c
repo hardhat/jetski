@@ -204,7 +204,7 @@ void draw(void)
         cumulative_z += seg->length;
         // Far plane clipping at 5000 cm (50m)
         if(z>FAR) break;
-        int x = WIDTH/2 + seg->curve*4;
+        int x = seg->curve*(DIST*SCALE)/z; // Perspective: far → centre, near → curve
         // y_world is the camera height above the water, scaled up from physical cm to
         // a tunable projection constant so that the nearest visible segment maps to the
         // bottom of the road area.  Physical Y_WORLD=120 cm gives a product of 24960,
@@ -214,8 +214,9 @@ void draw(void)
         printf("Segment %d: z=%d, x=%d, y=%d\n", i, z, x, y);
         if(y<-16) break; // Off the top of the screen
         if(y>HEIGHT) continue; // Off the bottom of the screen
-        draw_tile(&tree, 6, x-16, y-16);
-        draw_tile(&tree, 14, x+16, y-16);
+    
+        draw_tile(&tree, 6, WIDTH/2 - x, y-16);
+        draw_tile(&tree, 14, WIDTH/2 + x, y-16);
 
         // Draw the 10m wide lane as a line to either side
         SDL_SetRenderDrawColor(renderer, 255,255,255,255);
