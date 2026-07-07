@@ -24,6 +24,15 @@ buffer	EQU 0xc000	;PAGE3_VADDR
 bufferLen	EQU 0x3000
 
 Start:
+	LD BC,SerialPortName
+	LD H, O_WRONLY
+	OPEN
+	LD (SerialPort),A ; File handle to serial port or error if negative. 
+
+	CALL DbgMsg
+	db "Starting jetski.asm", 13, 10, 0
+	LD HL,MappedMem
+	CALL DbgHL
 
 InitKeyboard:
 	; Initialize the keyboard here if necessary.  For now, we just read from it each frame in the main loop.
@@ -239,8 +248,17 @@ QuitGame:
 	LD BC,ThanksForPlayingMessageLen
 	S_WRITE1 DEV_STDOUT
 
+	LD A,(SerialPort)
+	LD H,A
+	CLOSE
+
 	LD H,0
 	EXIT
+
+SerialPortName:
+	DB "#SER0", 0
+SerialPort:
+	DB 0
 
 ThanksForPlayingMessage:
 	DB "Thanks for playing!", 13, 10
@@ -598,6 +616,99 @@ PrintDigit:
 	LD (DE),A
 	INC DE
 	LD (Cursor),DE
+	RET
+
+DbgSerial:
+	PUSH BC
+	PUSH DE
+	PUSH HL
+	PUSH AF
+	LD (SerialMsg),A
+	LD A,(SerialPort)
+	LD H,A
+	LD DE,SerialMsg
+	LD BC,1
+	WRITE
+	POP AF
+	POP HL
+	POP DE
+	POP BC
+	RET
+
+SerialMsg:
+	DB 0
+
+DbgA:
+	PUSH AF
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	AND 15
+	CP 10
+	JR C,@DbgA1
+	ADD A,7
+@DbgA1:
+	ADD A,48	;'0'
+	CALL DbgSerial
+	POP AF
+	PUSH AF
+	AND 15
+	CP 10
+	JR C,@DbgA2
+	ADD A,7
+@DbgA2:
+	ADD A,48	;'0'
+	CALL DbgSerial ; Send to the debug output port
+	POP AF
+	RET
+
+DbgHL:
+	PUSH HL
+	PUSH AF
+	LD A,H
+	CALL DbgA
+	LD A,L
+	CALL DbgA
+	POP AF
+	POP HL
+	RET
+
+DbgBC:
+	PUSH BC
+	PUSH AF
+	LD A,B
+	CALL DbgA
+	LD A,C
+	CALL DbgA
+	POP AF
+	POP BC
+	RET
+
+DbgDE:
+	PUSH DE
+	PUSH AF
+	LD A,D
+	CALL DbgA
+	LD A,E
+	CALL DbgA
+	POP AF
+	POP DE
+	RET
+
+DbgMsg:
+	EX (SP),HL
+	PUSH AF
+@DbgMsgLoop:
+	LD A,(HL)
+	OR A
+	JR Z,@DbgMsgDone
+	CALL DbgSerial
+	INC HL
+	JR @DbgMsgLoop
+@DbgMsgDone:
+	POP AF
+	EX (SP),HL
 	RET
 
 	DEFC ACCELERATION = 75	; in 8.8 fixed-point cm/frame^2
@@ -958,6 +1069,18 @@ BuildPlayerSprite:
 ; since sprits are displayed between y positions 64 and 240, we can use the y position to determine the scale of the sprite to use, with closer objects 
 ; (y closer to 240) using larger sprites and farther objects (y closer to 64) using smaller sprites.
 AddScaledCompositeSprite:
+	; CALL DbgMsg
+	; DB "AddScaledCompositeSprite: HL=",0
+	; CALL DbgHL
+	; CALL DbgMsg
+	; DB " y=",0
+	; CALL DbgBC
+	; CALL DbgMsg
+	; DB " x=",0
+	; CALL DbgDE
+	; CALL DbgMsg
+	; DB 13,10,0
+
 	LD A,(HL) ; Get the number of different scales for this sprite
 	INC HL
 	PUSH BC ; y position
@@ -1000,6 +1123,7 @@ UseScale:
 	INC HL
 	LD C,(HL) ; Get the row count
 	INC HL
+
 	; Now HL points to the tile numbers for the sprite, and BC has the column and row count for the sprite at the appropriate scale.
 	; Calculate the location of the first sprite, based on the bottom center anchor point and the column and row count of the sprite
 	LD A,B
@@ -1034,25 +1158,25 @@ UseScale:
 MakeSpritesLoop:
 	LD A,(DE) ; Get the tile number for this sprite
 	INC DE
+	INC DE ; Skip the 2 pad bytes in the tile table (for tile 256 and above, but not supported yet)
 	OR A
-	JR Z,SkipSprite ; If tile number is 0, skip this sprite (used for blank spaces in the composite sprite)
+	JP Z,SkipSprite ; If tile number is 0, skip this sprite (used for blank spaces in the composite sprite)
 	; Add a sprite entry for this tile at the current position in SCS_X and SCS_Y
 	PUSH BC ; Save column and row count for later use
 	PUSH DE ; Save the pointer to the tile table for later use
 	LD HL,(NextSpriteEntry) ; Get the next free sprite entry
-	LD DE,(SCS_X) ; Get the x position for this sprite
-	LD (HL),E ; Set the x position for this sprite
-	INC HL
-	LD (HL),D ; Set the x position for this sprite
-	INC HL
 	LD DE,(SCS_Y) ; Get the y position for this sprite
 	LD (HL),E ; Set the y position for this sprite
 	INC HL
 	LD (HL),D ; Set the y position for this sprite
 	INC HL
+	LD DE,(SCS_X) ; Get the x position for this sprite
+	LD (HL),E ; Set the x position for this sprite
+	INC HL
+	LD (HL),D ; Set the x position for this sprite
+	INC HL
 	LD (HL),A ; Set the tile number for this sprite
 	INC HL
-
 	LD C,0
 	CP  64
 	JR C,@WriteFlags
@@ -1094,7 +1218,9 @@ SkipSprite:
 	LD (SCS_X),HL
 	POP BC
 
-	DJNZ MakeSpritesLoop ; Loop until we've processed all columns for this sprite
+	DEC B
+	JP NZ,MakeSpritesLoop ; Loop until we've processed all columns for this sprite
+	;DJNZ MakeSpritesLoop ; Loop until we've processed all columns for this sprite
 
 	; Now reset the column position and move to the next row for the next sprite
 	LD HL,(SCS_X_Left) ; Reset x position to the leftmost position for this sprite
@@ -1108,7 +1234,7 @@ SkipSprite:
 	LD A,(SCS_Columns) ; Check if we've processed all rows for this sprite
 	LD B,A
 	DEC C
-	JR NZ,MakeSpritesLoop ; If not, loop back to process the next row
+	JP NZ,MakeSpritesLoop ; If not, loop back to process the next row
 
 	RET
 
