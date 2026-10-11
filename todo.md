@@ -1,124 +1,133 @@
-# Jet Ski Racing — Development Todo
+# Jet Ski Racing (Z80 asm, Zeal 8-bit Computer) — Development Todo
+
+## Known Issues (from reviewing `main.asm` and the running build)
+- [ ] Player boat is drawn at the smallest scale and right of centre (screen x ≈ 224). Scale index grows with `y` but sprite lists are ordered largest first; `BuildPlayerSprite` should force `BoatSprite1` and centre on x = 160 + 16 (sprite coordinate offset)
+- [ ] `BuildCourseSegmentSprites` passes x in BC / y in DE, but `AddScaledCompositeSprite` documents DE = x, BC = y; reconcile and re-verify tree scaling
+- [ ] Tree placement tests flag bits 0/1 as "curve right/left"; real flags are `HAS_RAMP=1`, `HAS_OBSTACLE_L=2`, `HAS_OBSTACLE_R=4`, `SLOWZONE=8`, `SHORE_L=16`, `SHORE_R=32`
+- [ ] End-of-course check compares only the low byte of the segment index (`CP L`) against the count
+- [ ] Segment-end test handles only one segment per frame; verify behaviour on very short segments
+- [ ] Horizon is `64` in the projection code but the sky/water boundary is at y = 80
+- [ ] `Makefile`: `main.o` depends only on `baselayer0000.ztm`; add all five `.ztm` layers, `course_index.asm` generation, and a deploy/run target
+- [ ] HUD values (LAP, TIME, POS, speed, boost) in the screenshot are static mock-up tiles
 
 ## Phase 1: Project Setup & Infrastructure
-- [ ] Set up SDCC build environment and Makefile
-- [ ] Port and adapt `dat.c` / `dat.h` from wsorrow; define new `DAT_BLOCK_*` constants
-- [ ] Implement `input.c` — keyboard (WASD/QE/arrows/Esc) and SNES controller polling
-- [ ] Implement `game.c` — top-level state machine (TITLE, MENU, RACE, RESULTS)
-- [ ] Stub out all remaining modules with empty function signatures
+- [x] `z88dk-z80asm` Makefile with asset pipeline (gif → zts → zx0, tmx → ztm)
+- [x] Zeal OS start-up: serial debug port, raw non-blocking keyboard, video mode switch
+- [x] ZX0 tileset decompression into video memory pages
+- [x] Tilemap + attribute (palette) fill from `.ztm`, palette load
+- [x] vblank-synchronised main loop with sprite table copy
+- [x] Serial debug helpers (`DbgMsg`, `DbgA`, `DbgHL`, `DbgBC`, `DbgDE`)
+- [x] `math.asm` library (multiply, divide, rand16, sine)
+- [ ] Fix Makefile dependencies (see Known Issues)
+- [ ] Split `main.asm` into modules (input, physics, render, hud, sprites) as it grows
+- [ ] Game state variable and state machine (TITLE, MENU, RACE, RESULTS)
+- [ ] Add `make deploy` / `make run` for the emulator
 
-## Phase 2: Renderer — Water & Sky
-- [ ] Implement scanline perspective projection for flat water surface (rows 5–14)
-- [ ] Implement palette cycling on water tiles to simulate motion toward player
-- [ ] Implement sky/background region rendering (rows 1–4, static or horizontally scrolling)
-- [ ] Implement horizon line placement at sky/water boundary
+## Phase 2: Background, Sky & Shore
+- [x] Water gradient + sky/mountains tilemaps
+- [x] Shore tiles converted to sprites and animated
+- [ ] Tie shore scroll rate to player velocity (stop when stationary)
+- [ ] Choose left/right shore per segment (`SHORE_L` / `SHORE_R`)
+- [ ] Align horizon constant with the sky/water boundary
+- [ ] Shift sky/mountains horizontally on curves
+- [ ] Optional: water motion via palette animation
 
-## Phase 3: Renderer — Track Curves
-- [ ] Implement segment-based track curvature (offset horizon and road edges per segment)
-- [ ] Implement lateral road edge rendering (track boundary lines visible in water region)
-- [ ] Implement track looping (seamless 2-lap repeat)
-- [ ] Implement camera position advancing through segments at player speed
+## Phase 3: Track Data & Course Editor
+- [x] Segment format (`curve`, `length`, `flags`) and course index layout
+- [x] Course editor web tool and generated `course_index.asm`
+- [x] Course 0 loaded into `Course*` variables at start-up
+- [x] Advance through segments and loop at end of course
+- [ ] 16-bit segment compare; course selection from menu
+- [ ] Define secondary per-segment object table (ramp/obstacle type and lateral position)
+- [ ] Add course editor export step to the Makefile
+- [ ] Design final Course 1 (curves, shore, ramps, obstacles)
 
-## Phase 4: Track Data System
-- [ ] Define and document `TrackSegment` binary struct (curve, length, flags)
-- [ ] Implement track block loader from `.dat` (`DAT_BLOCK_TRACK`)
-- [ ] Implement track position tracking (world units, segment lookup)
-- [ ] Implement ramp segment detection (flag `HAS_RAMP`)
-- [ ] Implement out-of-bounds / slow-down zone detection (track edge threshold)
+## Phase 4: Player Physics
+- [x] Throttle acceleration, coast, brake, max speed (8.8 fixed point)
+- [ ] Apply `Steer` to `WorldPosX` with speed-dependent turning
+- [ ] Apply segment `curve` as lateral/yaw drift
+- [ ] Use `Yaw` / `sine_88` if a heading model is needed
+- [ ] Track edge detection and slow-down zone speed reduction
+- [ ] Obstacle collision + speed penalty
+- [ ] Boost state (duration, decay)
+- [ ] Convert velocity to km/h for display
+- [ ] Tune constants (`ACCELERATION`, `COAST`, `BREAK`, `MAX_SPEED`)
 
-## Phase 5: Player Physics
-- [ ] Implement throttle acceleration (gradual build-up)
-- [ ] Implement momentum-based deceleration (coast-down and brake)
-- [ ] Implement lateral steering with speed-dependent turning radius
-- [ ] Implement slow-down zone speed reduction (out-of-bounds edges)
-- [ ] Implement obstacle collision detection and speed penalty
-- [ ] Implement flat speed boost state (duration + decay after clean landing)
+## Phase 5: Perspective Sprites
+- [x] Composite sprite format and scaled tile grids (boat, tree, buoy)
+- [x] Perspective projection of the next 5 segments using `Div24_16`
+- [ ] Fix scale selection and x/y argument order (Known Issues)
+- [ ] Place scenery left/right of the track using segment flags and lateral offset
+- [ ] Reduce per-frame cost (skip off-screen objects, avoid the 24/16 divide for far sprites, e.g. reciprocal table)
+- [ ] Clip sprites to the screen edges and the 128-sprite budget
+- [ ] Z-order: far objects first, player and near objects in front
+- [ ] Obstacle sprite sets (rocks, logs)
+- [ ] Ramp scale table (tiles 160–191)
+- [ ] Trackside flag/buoy markers at regular intervals
+- [ ] Player sprite: 4×4 at bottom centre, lean levels, flip for right lean
+- [ ] Verify per-scanline sprite limits on hardware/emulator
 
 ## Phase 6: Jumps & Tricks
-- [ ] Implement airborne state triggered by ramp segments
-- [ ] Implement 4 trick inputs (arrow keys / SNES face buttons), active while airborne
-- [ ] Implement trick animation frame selection (pre-rendered airborne sprite variants)
-- [ ] Implement clean landing detection (no obstacle mid-air, valid landing surface)
-- [ ] Implement failed landing handling (no points, speed penalty)
-- [ ] Integrate trick bonus points and boost trigger on clean landing
+- [ ] Airborne state triggered by ramp
+- [ ] 4 trick inputs and key mapping
+- [ ] Trick animation frames (art + frame selection)
+- [ ] Clean/failed landing detection
+- [ ] Bonus points + boost on clean landing; penalty on failure
 
-## Phase 7: Sprite Rendering
-- [ ] Implement scaled sprite blitter (index into pre-rendered size table by distance)
-- [ ] Implement player jet ski rendering: straight, lean-left levels, lean-right (mirror)
-- [ ] Implement player sheer effect via tile column seam offsets
-- [ ] Implement NPC racer scaled sprite rendering (1×1 to 4×4 tile sizes)
-- [ ] Implement trackside marker rendering (flags/buoys, 4+ scale steps, at track edges)
-- [ ] Implement obstacle sprite rendering (multiple sizes, placed per segment flags)
-- [ ] Implement ramp sprite rendering (multiple sizes)
+## Phase 7: AI Opponents
+- [ ] Define AI record layout in asm (`track_pos` word, `lateral` byte); decide tick rate and storage size
+- [ ] PC-side recording tool that exports `.asm` data per opponent per course
+- [ ] Playback: tick counter → record
+- [ ] Map AI world position relative to the player to screen x/y and scale
+- [ ] Draw AI boats with correct depth ordering
+- [ ] Record 5 playthroughs at varied skill levels
 
-## Phase 8: AI Opponents
-- [ ] Define `AIFrame` binary struct (track_pos, lateral)
-- [ ] Implement AI recording block loader (`DAT_BLOCK_AI_0` through `DAT_BLOCK_AI_4`)
-- [ ] Implement per-opponent frame playback (tick counter → AIFrame index)
-- [ ] Implement AI world position → screen position mapping (depth + lateral to screen x/y)
-- [ ] Integrate AI racers into renderer (sorted by depth, correct sprite size selection)
+## Phase 8: HUD
+- [x] Static HUD mock-up tiles in `hud` tilemap
+- [x] Digit/colon/slash tile printing (`PrintDec16`, `PrintDec99`, `PrintDigit`)
+- [x] Debug overlay (throttle, segment, z, velocity, time)
+- [ ] Live LAP, TIME, POS (with `st`/`nd`/`rd`/`th` suffix tiles), SPEED, BOOST
+- [ ] Remove debug overlay (or toggle with a key)
+- [ ] Trick point flash
 
-## Phase 9: HUD
-- [ ] Implement HUD tile row renderer (uses `DAT_BLOCK_HUD_TS` / `DAT_BLOCK_HUD_PAL`)
-- [ ] Render current race position (1–6)
-- [ ] Render lap counter (e.g. `LAP 1/2`)
-- [ ] Render current lap time (MM:SS.s)
-- [ ] Render numeric speed readout (km/h)
-- [ ] Render boost indicator bar (fill level reflects boost remaining)
-- [ ] Implement trick point flash (brief on-screen display on clean landing)
+## Phase 9: Race Logic & Scoring
+- [ ] Lap counting at course loop; 2-lap end
+- [ ] Live position vs AI
+- [ ] Finish order and race clock reset/hold
+- [ ] Scoring formula and top-3 unlock flag
+- [ ] Pre-race countdown (3-2-1-GO)
 
-## Phase 10: Race Logic & Scoring
-- [ ] Implement lap detection (crossing start/finish line increments lap counter)
-- [ ] Implement 2-lap race end trigger
-- [ ] Implement live position tracking (compare player track_pos vs all AI track_pos)
-- [ ] Implement race finish order recording
-- [ ] Implement scoring formula: Position Points + Time Bonus + Trick Points
-- [ ] Implement top-3 finish → next course unlock flag
+## Phase 10: Screens & Game Flow
+- [ ] Title screen
+- [ ] Main menu (Start, Sound Settings, Exit)
+- [ ] Sound settings
+- [ ] Results screen
+- [ ] Post-race flow (retry / next course / exit)
+- [x] Exit path that restores text mode (`QuitGame` on `Esc`)
 
-## Phase 11: Screens & Game Flow
-- [ ] Implement title screen (static image + press start prompt)
-- [ ] Implement main menu (Start, Sound Settings, Exit)
-- [ ] Implement sound settings screen (volume levels + disable)
-- [ ] Implement pre-race countdown (3-2-1-GO)
-- [ ] Implement results screen (position, lap times, trick points, combined score)
-- [ ] Implement post-race flow (retry / next course / exit options)
+## Phase 11: Input
+- [x] Keyboard: arrows, Space, Esc, Enter (press/release)
+- [ ] Hold-state input flags instead of overwriting throttle on press/release
+- [ ] Final key map (including tricks)
+- [ ] SNES controller support
 
 ## Phase 12: Audio
-- [ ] Implement engine roar on wavetable channel (pitch proportional to player speed)
-- [ ] Implement volume control (multiple levels + mute), hooked to settings menu
+- [ ] Engine roar on wavetable channel (pitch ∝ speed)
+- [ ] Volume control and mute
 
-## Phase 13: Asset Pipeline & Tools
-- [ ] Write `dat_packer` tool (PC-side): packs tileset, palette, track data, AI recordings into `.dat`
-- [ ] Write `ai_recorder` tool (or process): play/simulate opponent paths and export `AIFrame` streams
-- [ ] Document `.dat` block layout and packing order for track 1
-
-## Phase 14: Track 1 Content
-- [ ] Design track 1 segment data (curves, lengths, obstacle placements, ramp clusters)
-- [ ] Create / source art: water tiles, sky background, trackside scenery
-- [ ] Create obstacle sprites (rock/buoy) at multiple sizes
-- [ ] Create ramp sprites at multiple sizes
-- [ ] Create flag/buoy trackside marker sprites at multiple sizes
-- [ ] Create player jet ski sprite sheet (straight, 2–3 lean levels, 4 trick airborne frames)
-- [ ] Create NPC racer sprite sheet (4 scaled sizes)
-- [ ] Record 5 AI opponent playthroughs at varied skill levels
-- [ ] Pack all track 1 assets into `track1.dat`
-- [ ] Full integration test: race track 1 start to finish
-
-## Phase 15: Performance & Polish
-- [ ] Profile render loop on 10 MHz Z80; verify stable 30 fps (within 2-frame vsync budget)
-- [ ] Tune player physics constants (acceleration, turning feel, boost duration)
-- [ ] Tune AI opponent timing and spread across skill levels
-- [ ] Fix bugs identified during integration testing
-- [ ] Final playtesting pass
+## Phase 13: Performance & Polish
+- [ ] Measure main-loop frame time; confirm 60 fps (or move to 30 fps)
+- [ ] Optimise sprite rebuild and sprite table clearing
+- [ ] Tune AI spread and physics
+- [ ] Playtest and bug-fix pass
+- [ ] Remove debug serial output from the release build
 
 ---
 
 ## Post-MVP (backlog)
-- [ ] Track 2 content + art + AI recordings
-- [ ] Track 3 content + art + AI recordings
-- [ ] High score persistence (save to storage)
-- [ ] Background music (chiptune channels)
-- [ ] Trick jingle SFX on landing
-- [ ] Collision / splash SFX
-- [ ] Opponent palette differentiation (each NPC has a distinct colour)
-- [ ] Multiple selectable riders with different stats
+- [ ] Track 2 and 3 content, art, AI recordings
+- [ ] High score persistence
+- [ ] Background music
+- [ ] Trick jingle and collision/splash SFX
+- [ ] Opponent palette differentiation
+- [ ] Selectable riders with different stats
