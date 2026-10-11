@@ -76,7 +76,25 @@ WriteSpriteFlags:
 	
 	RET
 
+; Advance the shore one animation step per SHORE_CM_PER_STEP cm travelled, so it stops when the boat does.
 UpdateShore:
+	LD A,(Velocity+1) ; Whole cm/frame
+	LD B,A
+	LD A,(ShoreDistance)
+	ADD A,B
+@StepLoop:
+	CP SHORE_CM_PER_STEP
+	JR C,@StepsDone
+	SUB SHORE_CM_PER_STEP
+	PUSH AF
+	CALL StepShore
+	POP AF
+	JR @StepLoop
+@StepsDone:
+	LD (ShoreDistance),A
+	RET
+
+StepShore:
 	LD IX,(SpriteTileMap+2)	; Where the sprite entries start
 	LD A,(SpriteTileMap+4) ; How many entries there are
 	LD B,A
@@ -603,7 +621,9 @@ SegDrawList:
 
 Frame:
 	DEFB 0
-
+ShoreDistance:
+	DEFB 0	; cm travelled towards the next shore step
+	DEFC SHORE_CM_PER_STEP = MAX_SPEED>>8 ; One step per frame at top speed
    ; Put the sprite table at 0xc000
     defc sprite_table = 0xc000
     defc sprite_y = 0   ; 16-bit Y position

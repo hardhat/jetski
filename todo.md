@@ -29,7 +29,7 @@
 ## Phase 2: Background, Sky & Shore
 - [x] Water gradient + sky/mountains tilemaps
 - [x] Shore tiles converted to sprites and animated
-- [ ] Tie shore scroll rate to player velocity (stop when stationary)
+- [x] Tie shore scroll rate to player velocity (stop when stationary)
 - [ ] Choose left/right shore per segment (`SHORE_L` / `SHORE_R`)
 - [ ] Align horizon constant with the sky/water boundary
 - [ ] Shift sky/mountains horizontally on curves
