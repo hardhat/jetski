@@ -1111,7 +1111,8 @@ AddScaledCompositeSprite:
 	LD L,C
 	LD DE,-64
 	ADD HL,DE
-	JP M,UseSmallestSprite ; If y < 64, use the smallest sprite
+	BIT 7,H ; ADD HL,DE does not update the sign flag, so test the sign bit directly
+	JP NZ,UseSmallestSprite ; If y < 64, use the smallest sprite
 	EX DE,HL ; Adjusted y position in DE
 	CALL DE_Times_A ; Get the scale index by dividing the adjusted y position by the range of y positions (240-64=176) and multiplying by the number of scales
 	; Now DE is y pos - 64, and HL is DE*sprite_count
