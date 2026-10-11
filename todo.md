@@ -9,7 +9,8 @@
 - [X] `ElapsedTimeFrames` is declared `DEFB` but accessed as a word, overwriting the byte after it (`WorldPosX`)
 - [ ] Scenery x offset is `500 cm × 208 × 35 / z`, which is off-screen for `z` < ~22000 cm; tune constants/segment spacing now that distance is cumulative
 - [ ] Horizon is `64` in the projection code but the sky/water boundary is at y = 80
-- [ ] `Makefile`: `main.o` depends only on `baselayer0000.ztm`; add all five `.ztm` layers, `course_index.asm` generation, and a deploy/run target
+- [x] `Makefile`: `main.o` now depends on all five `.ztm` layers, the `.ztp` palettes and the included modules; `make run` added
+- [ ] `Makefile`: generate `course_index.asm` from the course editor JSON (the editor has no export command yet)
 - [ ] HUD values (LAP, TIME, POS, speed, boost) in the screenshot are static mock-up tiles
 
 ## Phase 1: Project Setup & Infrastructure
@@ -20,10 +21,10 @@
 - [x] vblank-synchronised main loop with sprite table copy
 - [x] Serial debug helpers (`DbgMsg`, `DbgA`, `DbgHL`, `DbgBC`, `DbgDE`)
 - [x] `math.asm` library (multiply, divide, rand16, sine)
-- [ ] Fix Makefile dependencies (see Known Issues)
-- [ ] Split `main.asm` into modules (input, physics, render, hud, sprites) as it grows
-- [ ] Game state variable and state machine (TITLE, MENU, RACE, RESULTS)
-- [ ] Add `make deploy` / `make run` for the emulator
+- [x] Fix Makefile dependencies (see Known Issues)
+- [x] Split `main.asm` into modules (`game`, `input`, `physics`, `hud`, `sprites`, `debug`, `assets`), pulled in with `include`
+- [x] Game state variable and state machine (`GameState` dispatches to `RunTitle`, `RunMenu`, `RunRace`, `RunResults`; only the race exists, the rest are placeholders)
+- [x] `make run` starts `zeal-native` with `jetski.bin` as the user program and the project directory as `h:/`
 
 ## Phase 2: Background, Sky & Shore
 - [x] Water gradient + sky/mountains tilemaps

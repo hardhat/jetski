@@ -27,7 +27,14 @@ Source modules:
 
 | File | Purpose |
 |---|---|
-| `main.asm` | Initialisation, main loop, input, physics, HUD, sprite building, embedded assets |
+| `main.asm` | Initialisation, main loop (dispatches on `GameState`), quit, vblank helpers; includes the modules below |
+| `game.asm` | State machine (`STATE_TITLE/MENU/RACE/RESULTS`), `StartRace`, per-state frame handlers |
+| `input.asm` | Keyboard polling and key handlers |
+| `physics.asm` | Player physics, segment progress, race clock and course/player variables |
+| `hud.asm` | HUD / debug overlay and decimal printing |
+| `sprites.asm` | Sprite table, shore animation, perspective-scaled composite sprites, sprite definitions |
+| `debug.asm` | Serial debug output |
+| `assets.asm` | Embedded tilemaps, palettes and compressed tilesets |
 | `math.asm` | Fixed-point helpers: `DE_Times_A`, `BC_Times_DE`, `Div24_16`, `Div_HL_D`, `DE_Div_BC_88`, `multi8_8`, `rand16`, `sine_88` |
 | `course_index.asm` | Generated course table and per-course segment data |
 | `dzx0_standard.asm` | ZX0 decompressor |
