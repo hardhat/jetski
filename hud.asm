@@ -96,13 +96,13 @@ UpdateHud:
 	CALL Div_HL_D ; move to 100ths of a second: Frames*100/60
 	CALL PrintDec99 ; Print frames as 2 digit number
 
-	;LD HL,HudMsg
-	;CALL PrintString
+	; LD HL,HudMsg
+	; CALL PrintString
 
 	RET
 
 ;HudMsg:
-;	DEFB "Hello: 12/3",0
+;	DEFB ">Hello: 12/3",0
 
 ; void plotLine(int x0, int y0, int x1, int y1)
 ; {
@@ -176,6 +176,8 @@ PrintString:	; Print a null-terminated string at the current cursor position
 	RET Z ; End of string
 	; Remap 0-9, ':' and '/' to the character set used at 192
 	; Remap A-Z or a-z to the alphabet at 192+34 for 'A' or 'a'
+	CP '>'
+	JR Z,@PrintStringRemapGt
 	CP ':'
 	JR Z,@PrintStringRemapColon
 	CP '/'
@@ -198,6 +200,10 @@ PrintString:	; Print a null-terminated string at the current cursor position
 
 @PrintStringRemapSlash:
 	ADD A,192+11-'/' 
+	JR @PrintStringPrint
+
+@PrintStringRemapGt:
+	ADD A,192+34+26-'>'
 	JR @PrintStringPrint
 
 @PrintStringRemapAlpha:
