@@ -20,6 +20,7 @@ Layer0Offset	EQU VID_MEM_LAYER0_OFFSET
 Layer1Offset	EQU VID_MEM_LAYER1_OFFSET
 SpritesOffset	EQU	VID_MEM_SPRITES_OFFSET
 MappedMem	EQU	0x8000	;PAGE2_VADDR
+SpriteCenterX	EQU	160+16	; Screen centre x in sprite coordinates (sprites are offset by +16)
 buffer	EQU 0xc000	;PAGE3_VADDR
 bufferLen	EQU 0x3000
 
@@ -752,35 +753,35 @@ DoneSpeedUpdate:
 	LD HL,(WorldPosZ)
 	ADD HL,DE
 	LD (WorldPosZ),HL
-	; Look for end of segment
+	; Look for end of segment; loop since one frame can cross several short segments
+CheckSegmentEnd:
 	LD HL,(Segment)
 	ADD HL,HL
 	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
 	LD DE,(CourseSegmentPtr)
 	ADD HL,DE ; HL = pointer to current segment
 	INC HL ; Skip curve
-	LD A,(HL) ; Get length of segment
+	LD E,(HL) ; Get length of segment
 	INC HL
-	LD H,(HL)
-	LD L,A	; segment length in HL
-	LD DE,(WorldPosZ)
-	EX DE,HL
+	LD D,(HL) ; DE = segment length
+	LD HL,(WorldPosZ)
 	OR A
 	SBC HL,DE ; HL = WorldPosZ - segment length
 	JR C,DoneSegmentCheck ; If we haven't reached the end of the segment, we're done
-	; Save position in new segment
+	; Carry the remainder into the next segment
 	LD (WorldPosZ),HL
-	; Move to the next segment
 	LD HL,(Segment)
 	INC HL
+	LD DE,(CourseSegmentCount)
+	PUSH HL
+	OR A
+	SBC HL,DE
+	POP HL
+	JR C,SegmentIndexSet
+	LD HL,0 ; Past the last segment: loop back to the start of the course
+SegmentIndexSet:
 	LD (Segment),HL
-	LD A,(CourseSegmentCount)
-	CP L
-	JR NZ,DoneSegmentCheck ; If we haven't reached the end of the course, we're done
-	; Restart the course
-	LD HL,0
-	LD (Segment),HL
-	LD (WorldPosZ),HL
+	JR CheckSegmentEnd
 DoneSegmentCheck:
 	; TODO steering and curve handling
 
@@ -960,13 +961,18 @@ BuildCourseSegmentSprites:
 	; For now, just build some placeholder sprites to represent the course segments.
 
 	; iterate through the next few segments and add sprites based on the curve and distance from the player and flags
+	; SegDist = total length of the segments from the current one up to the one being drawn
+	LD HL,0
+	LD (SegDist),HL
 	LD HL,(Segment)
-	LD DE,(CourseSegmentPtr)
-	ADD HL,HL
-	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
-	ADD HL,DE ; HL = pointer to current segment
+	LD (DrawSegment),HL
 	LD C,5 ; Look at the next 5 segments for sprites to add
 @SegmentLoop:
+	LD HL,(DrawSegment)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	LD DE,(CourseSegmentPtr)
+	ADD HL,DE ; HL = pointer to segment
 	LD A,(HL) ; Get curve
 	INC HL
 	LD E,(HL) ; Get length
@@ -974,18 +980,19 @@ BuildCourseSegmentSprites:
 	LD D,(HL)
 	INC HL
 	LD B,(HL) ; Get flags
-	INC HL
+	LD HL,(SegDist)
+	ADD HL,DE
+	RET C ; Total no longer fits in 16 bits, so everything further is too far to see
+	LD (SegDist),HL
+	LD DE,(WorldPosZ)
+	OR A
+	SBC HL,DE ; HL = distance from the player to the end of this segment
 	; For now, just add a sprite based on the curve value as a placeholder
 	; In the future, we can use the curve, length, and flags to determine what
 	; sprites to add for the course segment, such as shore sprites, obstacle sprites, etc.
-	PUSH HL
 	PUSH BC
-	LD HL,(WorldPosZ)
-	EX DE,HL ; DE = player z position, HL = segment z length
-	OR A
-	SBC HL,DE ; HL = segment z position relative to player
 	LD B,H
-	LD C,L
+	LD C,L ; BC = z distance to the end of this segment
 	; Add prespective
 	; HORIZON=64 pixels, Y_WORLD=120 cm above horizon, DIST=208 (75 degree FOV), SCALE=35 for 1.0x scale
 	; int y = HORIZON + (Y_WORLD * DIST * SCALE) / z; // Perspective: far → near horizon, near → bottom
@@ -999,7 +1006,7 @@ BuildCourseSegmentSprites:
 	PUSH AF ; Get the flags into A
 	PUSH DE ; Save y position for later use in determining sprite scale
 	; For now set BC to x=240 + 500cm * WORLD * SCALE / z for the sprite, but eventually we can use the curve and flags to determine the x position of the sprite as well
-	LD HL,240
+	LD HL,SpriteCenterX
 	BIT 0,A ; Check if this segment has a curve to the right
 	JR Z,@NoRightCurve
 	PUSH AF
@@ -1030,25 +1037,34 @@ BuildCourseSegmentSprites:
 @NoLeftCurve:
 	; If no curve, just put the sprite in the center
 @XPositionSet:
-	LD B,H
-	LD C,L	; BC = x position in screen coordinates
-	POP DE ; Get y position back in DE
+	POP BC ; BC = y position
+	EX DE,HL ; DE = x position
 	LD HL,TreeSpriteList
 	CALL AddScaledCompositeSprite
 	
 	; Next segment
 	POP BC
+	LD HL,(DrawSegment)
+	INC HL
+	LD DE,(CourseSegmentCount)
+	PUSH HL
+	OR A
+	SBC HL,DE
 	POP HL
+	JR C,@DrawSegmentSet
+	LD HL,0 ; Wrap around to the start of the course
+@DrawSegmentSet:
+	LD (DrawSegment),HL
 
 	DEC C
-	JR NZ,@SegmentLoop
+	JP NZ,@SegmentLoop
 
 	RET
 
 BuildPlayerSprite:
 	; Build the player's sprite based on the player's position, speed, etc.
 
-	LD HL,240	; screen center x postion
+	LD HL,SpriteCenterX
 	LD BC,(Steer)
 	ADD HL,BC	; Adjust x position based on steering input
 	EX DE,HL	; DE = x position in screen coordinates
@@ -1081,6 +1097,9 @@ AddScaledCompositeSprite:
 	; CALL DbgMsg
 	; DB 13,10,0
 
+	LD A,B
+	CP 2
+	RET NC ; y >= 512 is far below the screen; also keeps the scale maths within 16 bits
 	LD A,(HL) ; Get the number of different scales for this sprite
 	INC HL
 	PUSH BC ; y position
@@ -1098,15 +1117,25 @@ AddScaledCompositeSprite:
 	; Now DE is y pos - 64, and HL is DE*sprite_count
 	LD D,176
 	CALL Div_HL_D ; Divide by 176 to get the scale index
-	; Now HL the index of the scale to use in the scale list
-	; check for overflow just in case
-	LD A,L
+	; HL = q, 0 at the horizon up to count at the bottom of the screen.  Lists are ordered largest first, so index = count-1-q
 	POP BC ; B=number of scales
+	LD A,H
+	OR A
+	JR NZ,UseLargestSprite
+	LD A,L
 	CP B
-	JR C,UseScale
-	LD HL,0 ; If overflow, use the first entry in the scale list (largest sprite)
+	JR NC,UseLargestSprite ; q >= count: at or below the bottom of the water, use the largest sprite
+	LD A,B
+	DEC A
+	SUB L
+	LD L,A
+	LD H,0
+	JR UseScale
+UseLargestSprite:
+	LD HL,0
 	JR UseScale
 UseSmallestSprite:
+	POP AF ; A = scale count; keeps the stack balanced with the PUSH AF above
 	LD H,0
 	LD L,A
 	DEC L ; Use the last entry in the scale list (smallest sprite)
@@ -1146,12 +1175,16 @@ UseScale:
 	ADD A,A
 	ADD A,A
 	ADD A,A
-	ADD A,A ; A = row count * 16 for the y offset from the center
-	LD H,A
-	LD A,L
-	SUB A,H
-	LD L,A
-	LD H,0
+	ADD A,A ; A = row count * 16 for the y offset from the bottom anchor
+	PUSH DE ; DE holds the tile table pointer
+	LD E,A
+	LD D,0
+	OR A
+	SBC HL,DE ; HL = y of the top row
+	POP DE
+	LD A,H
+	OR A
+	RET NZ ; Top is at or below the bottom of the screen: not visible
 	LD (SCS_Y),HL ; Save the y position for the first sprite in screen coordinates
 	; Now we have the starting position for the first sprite in screen coordinates in SCS_X and SCS_Y
 	; DE= tile table, and B=columns and C=rows.
@@ -1246,6 +1279,10 @@ SCS_Columns:
 	DEFB 0	; Number of columns in the current sprite
 SCS_X_Left:
 	DEFW 0	; The leftmost x position for the current sprite
+DrawSegment:
+	DEFW 0	; Segment index being projected in BuildCourseSegmentSprites
+SegDist:
+	DEFW 0	; Total length in cm from the current segment through DrawSegment
 
 CourseName:
 	DEFW 0	; Pointer to the course name string

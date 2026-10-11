@@ -1,11 +1,13 @@
 # Jet Ski Racing (Z80 asm, Zeal 8-bit Computer) — Development Todo
 
 ## Known Issues (from reviewing `main.asm` and the running build)
-- [ ] Player boat is drawn at the smallest scale and right of centre (screen x ≈ 224). Scale index grows with `y` but sprite lists are ordered largest first; `BuildPlayerSprite` should force `BoatSprite1` and centre on x = 160 + 16 (sprite coordinate offset)
-- [ ] `BuildCourseSegmentSprites` passes x in BC / y in DE, but `AddScaledCompositeSprite` documents DE = x, BC = y; reconcile and re-verify tree scaling
+- [x] Player boat scale and centring: scale selection now maps nearer (larger `y`) to larger sprites, and the player is centred at `SpriteCenterX` (176) — verify in emulator
+- [x] `BuildCourseSegmentSprites` now passes DE = x, BC = y, and accumulates distance across segments (`SegDist`) instead of using each segment's own length — verify tree scaling in emulator
 - [ ] Tree placement tests flag bits 0/1 as "curve right/left"; real flags are `HAS_RAMP=1`, `HAS_OBSTACLE_L=2`, `HAS_OBSTACLE_R=4`, `SLOWZONE=8`, `SHORE_L=16`, `SHORE_R=32`
-- [ ] End-of-course check compares only the low byte of the segment index (`CP L`) against the count
-- [ ] Segment-end test handles only one segment per frame; verify behaviour on very short segments
+- [x] End-of-course check uses the 16-bit segment index and keeps the remainder when looping
+- [x] Segment-end test loops, so one frame can cross several short segments
+- [ ] `ElapsedTimeFrames` is declared `DEFB` but accessed as a word, overwriting the byte after it (`WorldPosX`)
+- [ ] Scenery x offset is `500 cm × 208 × 35 / z`, which is off-screen for `z` < ~22000 cm; tune constants/segment spacing now that distance is cumulative
 - [ ] Horizon is `64` in the projection code but the sky/water boundary is at y = 80
 - [ ] `Makefile`: `main.o` depends only on `baselayer0000.ztm`; add all five `.ztm` layers, `course_index.asm` generation, and a deploy/run target
 - [ ] HUD values (LAP, TIME, POS, speed, boost) in the screenshot are static mock-up tiles
