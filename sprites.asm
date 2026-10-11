@@ -213,21 +213,25 @@ BuildCourseSegmentSprites:
 	; Build sprites for the current course segment based on the player's position and the segment's curve, etc. 
 	; For now, just build some placeholder sprites to represent the course segments.
 
-	; iterate through the next few segments and add sprites based on the curve and distance from the player and flags
-	; SegDist = total length of the segments from the current one up to the one being drawn
+	; Sprites with a higher table index are drawn in front, so collect the next segments near to far
+	; and then draw them far to near.
+	; SegDist = total length of the segments from the current one up to the one being collected
 	LD HL,0
 	LD (SegDist),HL
+	XOR A
+	LD (SegDrawCount),A
+	LD HL,SegDrawList
+	LD (SegDrawPtr),HL
 	LD HL,(Segment)
 	LD (DrawSegment),HL
 	LD C,5 ; Look at the next 5 segments for sprites to add
-@SegmentLoop:
+@CollectLoop:
 	LD HL,(DrawSegment)
 	ADD HL,HL
 	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
 	LD DE,(CourseSegmentPtr)
 	ADD HL,DE ; HL = pointer to segment
-	LD A,(HL) ; Get curve
-	INC HL
+	INC HL ; Skip curve
 	LD E,(HL) ; Get length
 	INC HL
 	LD D,(HL)
@@ -235,17 +239,57 @@ BuildCourseSegmentSprites:
 	LD B,(HL) ; Get flags
 	LD HL,(SegDist)
 	ADD HL,DE
-	RET C ; Total no longer fits in 16 bits, so everything further is too far to see
+	JR C,@CollectDone ; Total no longer fits in 16 bits, so everything further is too far to see
 	LD (SegDist),HL
 	LD DE,(WorldPosZ)
 	OR A
 	SBC HL,DE ; HL = distance from the player to the end of this segment
-	; For now, just add a sprite based on the curve value as a placeholder
+	EX DE,HL
+	LD HL,(SegDrawPtr)
+	LD (HL),E ; Store z and flags in SegDrawList
+	INC HL
+	LD (HL),D
+	INC HL
+	LD (HL),B
+	INC HL
+	LD (SegDrawPtr),HL
+	LD A,(SegDrawCount)
+	INC A
+	LD (SegDrawCount),A
+	LD HL,(DrawSegment)
+	INC HL
+	LD DE,(CourseSegmentCount)
+	PUSH HL
+	OR A
+	SBC HL,DE
+	POP HL
+	JR C,@DrawSegmentSet
+	LD HL,0 ; Wrap around to the start of the course
+@DrawSegmentSet:
+	LD (DrawSegment),HL
+	DEC C
+	JR NZ,@CollectLoop
+@CollectDone:
+
+	LD A,(SegDrawCount)
+	OR A
+	RET Z
+	LD C,A
+@DrawLoop:
+	LD HL,(SegDrawPtr) ; Walk the list backwards: farthest first
+	DEC HL
+	LD B,(HL) ; flags
+	DEC HL
+	LD D,(HL)
+	DEC HL
+	LD E,(HL) ; DE = distance to the end of this segment
+	LD (SegDrawPtr),HL
+	; For now, just add a sprite based on the flags as a placeholder
 	; In the future, we can use the curve, length, and flags to determine what
 	; sprites to add for the course segment, such as shore sprites, obstacle sprites, etc.
 	PUSH BC
-	LD B,H
-	LD C,L ; BC = z distance to the end of this segment
+	LD B,D
+	LD C,E ; BC = z distance to the end of this segment
 	; Add prespective
 	; HORIZON=64 pixels, Y_WORLD=120 cm above horizon, DIST=208 (75 degree FOV), SCALE=35 for 1.0x scale
 	; int y = HORIZON + (Y_WORLD * DIST * SCALE) / z; // Perspective: far → near horizon, near → bottom
@@ -293,34 +337,22 @@ BuildCourseSegmentSprites:
 	POP BC ; BC = y position
 	EX DE,HL ; DE = x position
 	LD HL,TreeSpriteList
+	XOR A ; No shear
 	CALL AddScaledCompositeSprite
 	
 	; Next segment
 	POP BC
-	LD HL,(DrawSegment)
-	INC HL
-	LD DE,(CourseSegmentCount)
-	PUSH HL
-	OR A
-	SBC HL,DE
-	POP HL
-	JR C,@DrawSegmentSet
-	LD HL,0 ; Wrap around to the start of the course
-@DrawSegmentSet:
-	LD (DrawSegment),HL
-
 	DEC C
-	JP NZ,@SegmentLoop
+	JP NZ,@DrawLoop
 
 	RET
 
 BuildPlayerSprite:
 	; Build the player's sprite based on the player's position, speed, etc.
 
-	LD HL,SpriteCenterX
-	LD BC,(Steer)
-	ADD HL,BC	; Adjust x position based on steering input
-	EX DE,HL	; DE = x position in screen coordinates
+	LD DE,SpriteCenterX	; DE = x position in screen coordinates
+	LD A,(Steer)
+	ADD A,A ; Lean 2 pixels per row for each unit of steer
 	LD BC,240-16 ; bottom of boat sprite is 16 pixels from the bottom of the screen
 	LD HL,BoatSpriteList
 	CALL AddScaledCompositeSprite
@@ -335,9 +367,14 @@ BuildPlayerSprite:
 ; Input: HL = pointer to the composite sprite definition which includes the {scale_count, scale_list[]} which point to {column_count, row_count, tile numbers[]} }
 ;         DE = x position of the sprite in screen coordinates
 ;         BC = y position of the sprite in screen coordinates
+;         A = shear: signed pixels each row sits left of the row above it; 0 for upright sprites. The bottom row stays anchored.
 ; since sprits are displayed between y positions 64 and 240, we can use the y position to determine the scale of the sprite to use, with closer objects 
 ; (y closer to 240) using larger sprites and farther objects (y closer to 64) using smaller sprites.
 AddScaledCompositeSprite:
+	LD (SCS_Shear),A ; Sign-extend to 16 bits
+	ADD A,A
+	SBC A,A
+	LD (SCS_Shear+1),A
 	; CALL DbgMsg
 	; DB "AddScaledCompositeSprite: HL=",0
 	; CALL DbgHL
@@ -422,6 +459,18 @@ UseScale:
 	OR A
 	SBC HL,BC ; Move left by the x offset to get the leftmost x position for the first sprite
 	POP BC ; Get column count back in BC
+	PUSH DE
+	PUSH BC
+	LD DE,(SCS_Shear)
+	DEC C
+	JR Z,@ShearDone
+@ShearLoop:
+	ADD HL,DE ; Top row is offset by shear*(rows-1)
+	DEC C
+	JR NZ,@ShearLoop
+@ShearDone:
+	POP BC
+	POP DE
 	LD (SCS_X),HL ; Save the x position for the first sprite in screen coordinates
 	LD (SCS_X_Left),HL ; Also save the leftmost x position for this sprite for later use in culling
 	POP HL ; Get y position back in HL
@@ -510,7 +559,13 @@ SkipSprite:
 	;DJNZ MakeSpritesLoop ; Loop until we've processed all columns for this sprite
 
 	; Now reset the column position and move to the next row for the next sprite
-	LD HL,(SCS_X_Left) ; Reset x position to the leftmost position for this sprite
+	LD HL,(SCS_X_Left) ; Reset x position to the leftmost position for this sprite, less one row of shear
+	PUSH BC
+	LD BC,(SCS_Shear)
+	OR A
+	SBC HL,BC
+	POP BC
+	LD (SCS_X_Left),HL
 	LD (SCS_X),HL
 	LD HL,(SCS_Y)
 	PUSH BC
@@ -531,12 +586,20 @@ SCS_Y:
 	DEFW 0	; Scaled composite sprite y position for the current segment
 SCS_Columns:
 	DEFB 0	; Number of columns in the current sprite
+SCS_Shear:
+	DEFW 0	; Signed x shift applied per row of the current sprite
 SCS_X_Left:
 	DEFW 0	; The leftmost x position for the current sprite
 DrawSegment:
 	DEFW 0	; Segment index being projected in BuildCourseSegmentSprites
 SegDist:
 	DEFW 0	; Total length in cm from the current segment through DrawSegment
+SegDrawCount:
+	DEFB 0	; Entries in SegDrawList this frame
+SegDrawPtr:
+	DEFW 0	; Next free entry in SegDrawList while collecting, then the end of the list while drawing
+SegDrawList:
+	DS 5*3	; Per segment: z distance (word), flags (byte)
 
 Frame:
 	DEFB 0
