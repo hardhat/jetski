@@ -96,7 +96,13 @@ UpdateHud:
 	CALL Div_HL_D ; move to 100ths of a second: Frames*100/60
 	CALL PrintDec99 ; Print frames as 2 digit number
 
+	;LD HL,HudMsg
+	;CALL PrintString
+
 	RET
+
+;HudMsg:
+;	DEFB "Hello: 12/3",0
 
 ; void plotLine(int x0, int y0, int x1, int y1)
 ; {
@@ -161,6 +167,50 @@ PrintDigit:
 	INC DE
 	LD (Cursor),DE
 	RET
+
+PrintString:	; Print a null-terminated string at the current cursor position
+	LD DE,(Cursor)
+@PrintStringLoop:
+	LD A,(HL)
+	CP 0
+	RET Z ; End of string
+	; Remap 0-9, ':' and '/' to the character set used at 192
+	; Remap A-Z or a-z to the alphabet at 192+34 for 'A' or 'a'
+	CP ':'
+	JR Z,@PrintStringRemapColon
+	CP '/'
+	JR Z,@PrintStringRemapSlash
+	CP 'A'
+	JR NC,@PrintStringRemapAlpha
+	CP '0'
+	JR C,@PrintStringPrint ; before '0' don't remap
+	CP '9'+1
+	JR C,@PrintStringRemapDigit
+	JR @PrintStringPrint ; Let through all others without remapping
+
+@PrintStringRemapDigit:
+	ADD A,192-'0'
+	JR @PrintStringPrint
+
+@PrintStringRemapColon:
+	ADD A,192+10-':' 
+	JR @PrintStringPrint
+
+@PrintStringRemapSlash:
+	ADD A,192+11-'/' 
+	JR @PrintStringPrint
+
+@PrintStringRemapAlpha:
+	CP 'z'+1
+	JR NC,@PrintStringPrint	; after 'z' don't remap
+	AND 255-('a'-'A')	; Convert lowercase to uppercase
+	ADD A,192+34-'A'
+	;JR @PrintStringPrint
+@PrintStringPrint:
+	LD (DE),A
+	INC DE
+	INC HL
+	JR @PrintStringLoop
 
 Cursor:
 	DEFW 0

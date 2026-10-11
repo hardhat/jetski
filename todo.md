@@ -32,7 +32,7 @@
 - [x] Tie shore scroll rate to player velocity (stop when stationary)
 - [ ] Choose left/right shore per segment (`SHORE_L` / `SHORE_R`)
 - [ ] Align horizon constant with the sky/water boundary
-- [ ] Shift sky/mountains horizontally on curves
+- [X] Shift sky/mountains horizontally on curves
 - [ ] Optional: water motion via palette animation
 
 ## Phase 3: Track Data & Course Editor
