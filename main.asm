@@ -793,7 +793,8 @@ DoneSegmentCheck:
 	CP 60
 	JR C,DoneTimeUpdate
 	LD A,0
-	LD (ElapsedTimeFrames),A
+	LD (ElapsedTimeFrames),A	; Reset the lower byte of the frame counter
+	LD (ElapsedTimeFrames+1),A	; Reset the upper byte of the frame counter
 	LD HL,(ElapsedTime)
 	INC HL
 	LD (ElapsedTime),HL
@@ -1300,7 +1301,7 @@ Segment:
 ElapsedTime:
 	DEFW 0	; in seconds
 ElapsedTimeFrames:
-	DEFB 0	; in frames, for sub-second timing
+	DEFW 0	; in frames, for sub-second timing
 WorldPosX:
 	DEFW 0	; from center of segment, in cm
 WorldPosZ:

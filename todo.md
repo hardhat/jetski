@@ -6,7 +6,7 @@
 - [ ] Tree placement tests flag bits 0/1 as "curve right/left"; real flags are `HAS_RAMP=1`, `HAS_OBSTACLE_L=2`, `HAS_OBSTACLE_R=4`, `SLOWZONE=8`, `SHORE_L=16`, `SHORE_R=32`
 - [x] End-of-course check uses the 16-bit segment index and keeps the remainder when looping
 - [x] Segment-end test loops, so one frame can cross several short segments
-- [ ] `ElapsedTimeFrames` is declared `DEFB` but accessed as a word, overwriting the byte after it (`WorldPosX`)
+- [X] `ElapsedTimeFrames` is declared `DEFB` but accessed as a word, overwriting the byte after it (`WorldPosX`)
 - [ ] Scenery x offset is `500 cm × 208 × 35 / z`, which is off-screen for `z` < ~22000 cm; tune constants/segment spacing now that distance is cumulative
 - [ ] Horizon is `64` in the projection code but the sky/water boundary is at y = 80
 - [ ] `Makefile`: `main.o` depends only on `baselayer0000.ztm`; add all five `.ztm` layers, `course_index.asm` generation, and a deploy/run target
