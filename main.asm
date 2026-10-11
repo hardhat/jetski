@@ -157,6 +157,14 @@ WritePalette:
 	DEC	C
 	JR	NZ,FillNameRow
 
+	; Repeat columns 0-19 in 20-39 on both layers so the mountain scroll can wrap seamlessly
+	LD	HL,MappedMem+Layer0Offset
+	LD	DE,MappedMem+Layer0Offset+20
+	CALL DuplicateTileMapColumns
+	LD	HL,MappedMem+Layer1Offset
+	LD	DE,MappedMem+Layer1Offset+20
+	CALL DuplicateTileMapColumns
+
 	LD	HL,Palette
 	LD	DE,PaletteOffset+MappedMem
 	LD	BC,PaletteSize
@@ -272,7 +280,58 @@ wait_end_vblank:
     in a, (IO_CTRL_STATUS_REG)
     and 2
     jr nz, wait_end_vblank
-    ret
+wait_for_mountain_top:
+	in a, (IO_STAT_VPOS_LOW)
+	LD L,A
+	in a, (IO_STAT_VPOS_HIGH) ; Read the high byte of the vertical position
+	LD A,L
+	CP 0x30
+	JR NZ,wait_for_mountain_top
+	LD HL,(ScrollMountain)
+	;;Test:
+; 	LD HL,(Steer)
+; 	ADD HL,HL
+; 	ADD HL,HL
+; 	BIT 7,H
+; 	JR Z,@ApplySteer
+; 	LD DE,320 ; make it modulus 320, and positive
+; 	ADD HL,DE
+; @ApplySteer:
+	;; End Test
+	LD A,L
+	OUT (IO_CTRL_L0_SCR_X_LOW),A
+	LD A,H
+	OUT (IO_CTRL_L0_SCR_X_HIGH),A
+wait_for_sea_top:
+	in a, (IO_STAT_VPOS_LOW)
+	LD L,A
+	in a, (IO_STAT_VPOS_HIGH) ; Read the high byte of the vertical position
+	LD A,L
+	CP 0x50
+	JR NZ,wait_for_sea_top
+	LD A,0	; Set horizontal scroll to 0 for the sea layer
+	OUT (IO_CTRL_L0_SCR_X_LOW),A
+	OUT (IO_CTRL_L0_SCR_X_HIGH),A
+	RET
+
+; In: HL = first row of a tilemap layer, DE = HL+20. Copies the 20 visible columns of each of the 15 rows.
+DuplicateTileMapColumns:
+	LD A,15
+@RowLoop:
+	PUSH HL
+	PUSH DE
+	LD BC,20
+	LDIR
+	POP DE
+	POP HL
+	LD BC,80 ; Tilemap rows are 80 entries apart
+	ADD HL,BC
+	EX DE,HL
+	ADD HL,BC
+	EX DE,HL
+	DEC A
+	JR NZ,@RowLoop
+	RET
 
 	include "game.asm"
 	include "input.asm"

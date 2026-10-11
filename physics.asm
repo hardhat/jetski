@@ -3,6 +3,7 @@
 	DEFC COAST = 25
 	DEFC BREAK = 150
 	DEFC MAX_SPEED = 46*256	; in 8.8 fixed-point cm/frame (about 100 km/h)
+	DEFC MOUNTAIN_PERIOD = 320*64	; The mountain tilemap repeats every 320 px
 
 UpdatePhysics:
 	; Update the physics of the game here, including player movement, collision detection, etc. 
@@ -40,6 +41,7 @@ DoneSpeedUpdate:
 	LD HL,(WorldPosZ)
 	ADD HL,DE
 	LD (WorldPosZ),HL
+	CALL UpdateMountainScroll ; DE = distance travelled this frame
 	; Look for end of segment; loop since one frame can cross several short segments
 CheckSegmentEnd:
 	LD HL,(Segment)
@@ -89,6 +91,69 @@ DoneTimeUpdate:
 
 	RET
 
+; Pans the mountains by the heading change over the current segment: curve/32 rad * 208 px/rad, in 1/64 px.
+; In: DE = distance travelled this frame in cm
+UpdateMountainScroll:
+	LD HL,(Segment)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	LD BC,(CourseSegmentPtr)
+	ADD HL,BC
+	LD A,(HL) ; curve
+	OR A
+	RET Z
+	INC HL
+	LD C,(HL)
+	INC HL
+	LD B,(HL)
+	PUSH BC ; segment length
+	LD C,A ; keep the sign of the curve
+	JP P,@CurveAbs
+	NEG
+@CurveAbs:
+	PUSH BC
+	CALL DE_Times_A ; A:HL = dz * |curve|
+	EX DE,HL
+	LD A,13
+	CALL DE_Times_A ; x13 here and x32 below make the 416 = 6.5 px * 64
+	LD B,5
+@Mul32:
+	ADD HL,HL
+	RLA
+	DJNZ @Mul32
+	POP DE ; E = signed curve
+	POP BC ; BC = segment length
+	PUSH DE
+	CALL Div24_16 ; HL = |curve|*dz*416/length
+	POP DE
+	LD A,E
+	LD DE,(ScrollMountainFine)
+	OR A
+	JP M,@PanRight
+	EX DE,HL ; Positive curve turns left, so the scenery moves right and the view scrolls left
+	OR A
+	SBC HL,DE
+	JR NC,@PanStore
+	LD DE,MOUNTAIN_PERIOD
+	ADD HL,DE
+	JR @PanStore
+@PanRight:
+	ADD HL,DE
+	LD DE,MOUNTAIN_PERIOD
+	OR A
+	SBC HL,DE
+	JR NC,@PanStore
+	ADD HL,DE
+@PanStore:
+	LD (ScrollMountainFine),HL
+	LD B,6
+@PanDown:
+	SRL H
+	RR L
+	DJNZ @PanDown
+	LD (ScrollMountain),HL
+	RET
+
 CourseName:
 	DEFW 0	; Pointer to the course name string
 CourseDifficulty:
@@ -117,3 +182,7 @@ Throttle:
 	DEFW 0	; player's throttle, in 8.8 fixed-point, cm/frame^2
 Velocity:
 	DEFW 0	; player's speed, in 8.8 fixed-point cm/frame
+ScrollMountain:
+	DEFW 0	; Horizontal scroll position for the mountain layer, in pixels (0-319)
+ScrollMountainFine:
+	DEFW 0	; ScrollMountain in 1/64 px, wrapping at MOUNTAIN_PERIOD
