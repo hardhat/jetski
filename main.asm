@@ -5,6 +5,21 @@
 	include "zos_keyboard.asm"
 	include "zos_video.asm"
 
+	; Define semihosting constants for the Z80 emulator.  
+	; Put the corresponding value in register A and do `OUT (0x10),A` to trigger the semihosting call.
+    SEMIHOST_EXIT          = 0x00; Exit emulator, L as error code
+    SEMIHOST_PRINT_CHAR    = 0x01; Print register L as a character
+    SEMIHOST_PRINT_INT     = 0x02; Print HL as a 16-bit decimal integer
+    SEMIHOST_PRINT_STRING  = 0x03; Print null-terminated string at memory address HL
+    SEMIHOST_READ_CHAR     = 0x04; Read a character from standard input into A
+    SEMIHOST_READ_STRING   = 0x05; Read null-terminated string from stdin into memory at HL
+    SEMIHOST_PRINT_HEX     = 0x06; Print HL as hexadecimal
+    SEMIHOST_READ_INT      = 0x07; Read 16-bit integer from stdin into HL
+    SEMIHOST_COUNTER_START = 0x08; Start t-states counter: L = counter ID (0-7)
+    SEMIHOST_COUNTER_STOP  = 0x09; Stop counter and print elapsed t-states: L = counter ID
+    SEMIHOST_COUNTER_SPLIT = 0x0A; Split counter (print since last split, don't stop): L = counter ID
+    SEMIHOST_VERSION       = 0xFF; Return semihost version in A
+
 	extern course_index
 	extern Div24_16
 	extern Div_HL_D
@@ -834,6 +849,8 @@ ReadKeyboardLoop:
 	CALL Z,HandleSpace
 	CP KB_KEY_ENTER
 	CALL Z,HandleEnter
+	CP KB_KEY_M
+	CALL Z,HandleM
 	; Handle other keys here
 	INC HL
 	DJNZ ReadKeyboardLoop
@@ -895,6 +912,17 @@ HandleSpace:
 HandleEnter:
 	; Handle enter key press by resetting the game or performing another action.
 	RET
+HandleM:
+	; Handle M key press by performing a specific action.
+	LD A,SEMIHOST_PRINT_STRING
+	LD HL,DbgMsgExiting
+	OUT (0x10),A
+	LD A,SEMIHOST_EXIT   ; Exits emulator
+	LD L,3
+	OUT (0x10),A
+	RET
+DbgMsgExiting: 
+	DB "Exiting early...\n",0
 
 HandleLeftRelease:
 	LD DE,0
