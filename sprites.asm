@@ -645,7 +645,7 @@ ProjectGround:
 	RET
 
 ; Fills SegCurve with the end distance and sideways shift of the track centre for each listed segment.
-; The shift is in cm with a gain of 1/8 folded in, positive when the track has moved left, and follows
+; The shift is in cm with a gain of 1/16 folded in, positive when the track has moved left, and follows
 ; the heading of the track (8.8 radians, from the segment curve values) relative to the camera.
 BuildCurveTable:
 	LD A,(SegDrawCount)
@@ -714,7 +714,7 @@ BuildCurveTable:
 	LD HL,256
 	LD (CurveQ),HL
 @Terms:
-	; Shift from the heading on entry: theta * l / 256 / 8
+	; Shift from the heading on entry: theta * l / 256 / 16
 	LD HL,(CurveTheta)
 	LD A,H
 	PUSH AF
@@ -735,11 +735,13 @@ BuildCurveTable:
 	RR L
 	SRL H
 	RR L
+	SRL H
+	RR L
 	POP AF
 	BIT 7,A
 	CALL NZ,NegHL
 	PUSH HL
-	; Shift from turning within the segment: curve/32 rad * l^2 / length / 2, so |curve| * m / 512
+	; Shift from turning within the segment: curve/32 rad * l^2 / length / 2 / 16, so |curve| * m / 1024
 	LD A,(CurveVal)
 	OR A
 	JP P,@AbsCurve1
@@ -749,6 +751,8 @@ BuildCurveTable:
 	CALL DE_Times_A
 	LD L,H
 	LD H,A
+	SRL H
+	RR L
 	SRL H
 	RR L
 	LD A,(CurveVal)

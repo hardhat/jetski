@@ -67,6 +67,7 @@
 - [ ] Obstacle sprite sets (rocks, logs)
 - [ ] Ramp scale table (tiles 160–191)
 - [x] Trackside flag/buoy markers at regular intervals — verify in emulator
+- [x] Segment curves shift trees and buoys via `ProjectGround` / `CurveAtZ` (eased within a segment) — tune the 1/16 gain in `BuildCurveTable` in the emulator; route future ground sprites through `AddGroundSprite`
 - [ ] Player sprite: 4×4 at bottom centre, lean levels, flip for right lean
 - [ ] Verify per-scanline sprite limits on hardware/emulator
 
