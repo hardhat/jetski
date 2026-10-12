@@ -27,6 +27,7 @@ StartRace:
 
 RunRace:
 	CALL wait_for_vblank
+	CALL UpdateShoreSides
 
 	; Draw the sprites
 	LD HL, sprite_table

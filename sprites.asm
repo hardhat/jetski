@@ -95,60 +95,289 @@ UpdateShore:
 	RET
 
 StepShore:
-	LD IX,(SpriteTileMap+2)	; Where the sprite entries start
-	LD A,(SpriteTileMap+4) ; How many entries there are
-	LD B,A
-
 	LD A,(Frame)
 	CP 16
-	JR Z,ResetShore
+	JR Z,@Reset
 	INC A
 	LD (Frame),A
-ShoreShiftLoop:
-	;sprite_y += 2
-	LD L,(IX+sprite_y)
-	LD H,(IX+sprite_y_msb)
-	INC HL
-	INC HL
-	LD (IX+sprite_y),L
-	LD (IX+sprite_y_msb),H
-	;sprite_x -= 1
-	LD L,(IX+sprite_x)
-	LD H,(IX+sprite_x_msb)
-	DEC HL
-	LD (IX+sprite_x),L
-	LD (IX+sprite_x_msb),H
-
-	LD DE,8
-	ADD IX,DE
-
-	DJNZ ShoreShiftLoop
-
-	RET
-
-ResetShore:
+	LD HL,2 ; Slide 2 px down and 1 px left per step
+	LD DE,-1
+	JR @Apply
+@Reset:
 	XOR A
 	LD (Frame),A
+	LD HL,-32 ; Snap back one tile pitch
+	LD DE,16
+@Apply:
+	LD (ShoreDY),HL
+	LD (ShoreDX),DE
+	LD A,(ShoreSides)
+	LD C,A
+	BIT 0,C
+	JR Z,@NoLeft
+	LD IX,(SpriteTileMap+2)	; Where the left shore sprite entries start
+	LD A,(SpriteTileMap+4) ; How many entries there are
+	LD B,A
+	CALL StepShoreBlock
+@NoLeft:
+	BIT 1,C
+	RET Z
+	LD HL,(ShoreDX) ; The right shore is the mirror image, so it slides the other way in x
+	XOR A
+	SUB L
+	LD L,A
+	SBC A,A
+	SUB H
+	LD H,A
+	LD (ShoreDX),HL
+	LD IX,(SpriteTileMap+17)
+	LD A,(SpriteTileMap+19)
+	LD B,A
 
-	; sprite_y-=16
+; In: IX = first sprite entry, B = entry count. Moves each entry by ShoreDX, ShoreDY; keeps C.
+StepShoreBlock:
+	LD A,B
+	OR A
+	RET Z
+@Loop:
 	LD L,(IX+sprite_y)
 	LD H,(IX+sprite_y_msb)
-	LD DE,-32
+	LD DE,(ShoreDY)
 	ADD HL,DE
 	LD (IX+sprite_y),L
 	LD (IX+sprite_y_msb),H
-	; sprite_x-=8
 	LD L,(IX+sprite_x)
 	LD H,(IX+sprite_x_msb)
-	LD DE,16
+	LD DE,(ShoreDX)
 	ADD HL,DE
 	LD (IX+sprite_x),L
 	LD (IX+sprite_x_msb),H
-	
-	LD DE,8
+	LD DE,sprite_size
 	ADD IX,DE
-	DJNZ ResetShore
+	DJNZ @Loop
+	RET
 
+; Switches the shore to the sides in the segment flags (SHORE_L / SHORE_R) when they change.
+UpdateShoreSides:
+	LD HL,(Segment)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	LD DE,(CourseSegmentPtr)
+	ADD HL,DE
+	INC HL
+	INC HL
+	INC HL
+	LD A,(HL) ; flags
+	RRCA
+	RRCA
+	RRCA
+	RRCA
+	AND 3 ; bit 0 = shore on the left, bit 1 = on the right
+	LD B,A
+	LD A,(ShoreSides)
+	CP B
+	RET Z
+	LD A,B
+
+; In: A = shore sides. Rebuilds the land tiles and the edge sprites for those sides.
+SetShoreSides:
+	LD (ShoreSides),A
+	XOR A
+	LD (Frame),A
+	LD A,(ShoreSides)
+	CALL BuildShoreTiles
+	LD DE,(SpriteTileMap+2)
+	LD HL,TileMapShore
+	LD A,(SpriteTileMap+4)
+	LD B,A
+	LD A,(ShoreSides)
+	AND 1
+	LD C,0
+	CALL ResetShoreBlock
+	LD DE,(SpriteTileMap+17)
+	LD HL,TileMapShore
+	LD A,(SpriteTileMap+19)
+	LD B,A
+	LD A,(ShoreSides)
+	AND 2
+	LD C,1
+	CALL ResetShoreBlock
+	; The right shore's sky sprites hide its edge sprites above the horizon, as the unmirrored sky sprites do on the left
+	LD DE,(SpriteTileMap+22)
+	LD HL,TileMapSky
+	LD A,(SpriteTileMap+24)
+	LD B,A
+	LD A,(ShoreSides)
+	AND 2
+	LD C,1
+	; Falls through
+
+; In: DE = first sprite entry, HL = its tilemap, B = entry count, A = non-zero to show it, C = 1 to mirror it for a right shore.
+ResetShoreBlock:
+	OR A
+	JR NZ,@Show
+	LD L,B
+	LD H,0
+	ADD HL,HL
+	ADD HL,HL
+	ADD HL,HL
+	LD B,H
+	LD C,L
+	EX DE,HL
+	LD E,L
+	LD D,H
+	INC DE
+	LD (HL),0 ; An all-zero entry sits off screen
+	DEC BC
+	LDIR
+	RET
+@Show:
+	LD A,B
+	LD (ShoreCount),A
+	LD A,C
+	LD (ShoreMirror),A
+	PUSH DE
+	LD C,15
+@RowLoop:
+	LD B,20
+@ColLoop:
+	LD A,(HL)
+	CP 0xff
+	PUSH HL
+	CALL NZ,InitSprite
+	POP HL
+	INC HL
+	DJNZ @ColLoop
+	DEC C
+	JR NZ,@RowLoop
+	POP IX
+	LD A,(ShoreMirror)
+	OR A
+	RET Z
+	LD A,(ShoreCount)
+	LD B,A
+@Mirror:
+	LD HL,336 ; Column c at x = 16+16*c moves to column 19-c
+	LD E,(IX+sprite_x)
+	LD D,(IX+sprite_x_msb)
+	OR A
+	SBC HL,DE
+	LD (IX+sprite_x),L
+	LD (IX+sprite_x_msb),H
+	SET 3,(IX+sprite_flags) ; flip x
+	LD DE,sprite_size
+	ADD IX,DE
+	DJNZ @Mirror
+	RET
+
+; In: A = shore sides. Rewrites the land in rows SHORE_FIRST_ROW.. of both tilemap layers.
+BuildShoreTiles:
+	LD (ShoreSides),A
+	LD IX,MappedMem+Layer0Offset+SHORE_FIRST_ROW*80
+	LD HL,TileMapBg+SHORE_FIRST_ROW*20
+	LD (ShoreSrc),HL
+	LD A,SHORE_ROWS
+	LD (ShoreRowsLeft),A
+@Row:
+	LD HL,(ShoreSrc)
+	LD DE,19
+	ADD HL,DE
+	LD A,(HL) ; The last column of each row is plain water
+	LD (ShoreWater),A
+	LD B,0
+@Water:
+	LD A,(ShoreWater)
+	LD C,0
+	CALL PutShoreTile
+	INC B
+	LD A,B
+	CP 20
+	JR C,@Water
+	LD A,(ShoreSides)
+	BIT 0,A
+	JR Z,@NoLeft
+	LD B,0
+@Left:
+	LD HL,(ShoreSrc)
+	LD E,B
+	LD D,0
+	ADD HL,DE
+	LD A,(HL)
+	LD C,0
+	CALL PutShoreTile
+	INC B
+	LD A,B
+	CP SHORE_LAND_COLS
+	JR C,@Left
+@NoLeft:
+	LD A,(ShoreSides)
+	BIT 1,A
+	JR Z,@NoRight
+	LD B,0
+@Right:
+	LD HL,(ShoreSrc)
+	LD E,B
+	LD D,0
+	ADD HL,DE
+	LD D,(HL) ; tile
+	LD C,8 ; flip x
+	PUSH BC
+	LD A,19
+	SUB B
+	LD B,A
+	LD A,D
+	CALL PutShoreTile
+	POP BC
+	INC B
+	LD A,B
+	CP SHORE_LAND_COLS
+	JR C,@Right
+@NoRight:
+	LD HL,(ShoreSrc)
+	LD DE,20
+	ADD HL,DE
+	LD (ShoreSrc),HL
+	LD DE,80
+	ADD IX,DE
+	LD A,(ShoreRowsLeft)
+	DEC A
+	LD (ShoreRowsLeft),A
+	JR NZ,@Row
+	RET
+
+; In: IX = layer 0 address of the row, B = column, A = tile, C = attribute bits to add (flip x). Keeps BC.
+PutShoreTile:
+	PUSH BC
+	PUSH IX
+	POP HL
+	LD E,B
+	LD D,0
+	ADD HL,DE
+	LD (HL),A
+	LD B,0 ; Palette from the tile number, as in the tilemap fill
+	CP 64
+	JR C,@Palette
+	INC B
+	CP 128
+	JR C,@Palette
+	INC B
+	CP 160
+	JR C,@Palette
+	INC B
+	CP 192
+	JR C,@Palette
+	INC B
+@Palette:
+	LD A,B
+	ADD A,A
+	ADD A,A
+	ADD A,A
+	ADD A,A
+	OR C
+	LD DE,Layer1Offset-Layer0Offset
+	ADD HL,DE
+	LD (HL),A
+	POP BC
 	RET
 
 CopySprite:	; Copy the sprite at DE to the next available sprite entry
@@ -319,50 +548,49 @@ BuildCourseSegmentSprites:
 	EX DE,HL ; DE = y position in screen coordinates
 	POP AF
 	PUSH AF ; Get the flags into A
-	PUSH DE ; Save y position for later use in determining sprite scale
-	; For now set BC to x=240 + 500cm * WORLD * SCALE / z for the sprite, but eventually we can use the curve and flags to determine the x position of the sprite as well
-	LD HL,SpriteCenterX
-	BIT 0,A ; Check if this segment has a curve to the right
-	JR Z,@NoRightCurve
+	; Trees stand on the shore edge, on each side the segment flags mark as shore
+	LD B,D
+	LD C,E ; BC = y position
+	BIT 4,A ; SHORE_L
+	JR Z,@NoLeftTree
 	PUSH AF
-	PUSH HL
-	LD HL,0x8AC0 ; 500cm * WORLD * SCALE = 500*35=17500=0x8AC0, so we start with the high byte of that value in A
-	LD A,0x37 ; and the low byte in A after the call to Div24_16
-	CALL Div24_16 ; Divide by z (in BC) to get the perspective x
-	LD B,H
-	LD C,L
-	POP HL
+	CALL ShoreEdgeX
+	LD HL,TreeSpriteList
+	XOR A ; No shear
+	PUSH BC
+	CALL AddScaledCompositeSprite
+	POP BC
 	POP AF
-	ADD HL,BC
-	JR @XPositionSet
-@NoRightCurve:
-	BIT 1,A ; Check if this segment has a curve to the left
-	JR Z,@NoLeftCurve
-	PUSH AF
-	PUSH HL
-	LD HL,0x8AC0 ; 500cm * WORLD * SCALE = 500*35=17500=0x8AC0, so we start with the high byte of that value in A
-	LD A,0x37 ; and the low byte in A after the call to Div24_16
-	CALL Div24_16 ; Divide by z (in BC) to get the perspective x
-	LD B,H
-	LD C,L
-	POP HL
-	POP AF
+@NoLeftTree:
+	BIT 5,A ; SHORE_R
+	JR Z,@NoRightTree
+	CALL ShoreEdgeX
+	LD HL,SpriteCenterX*2 ; Mirror the left edge about the screen centre
 	OR A
-	SBC HL,BC	; Subtract from screen center for left curve
-@NoLeftCurve:
-	; If no curve, just put the sprite in the center
-@XPositionSet:
-	POP BC ; BC = y position
-	EX DE,HL ; DE = x position
+	SBC HL,DE
+	EX DE,HL
 	LD HL,TreeSpriteList
 	XOR A ; No shear
 	CALL AddScaledCompositeSprite
-	
+@NoRightTree:
 	; Next segment
 	POP BC
 	DEC C
 	JP NZ,@DrawLoop
 
+	RET
+
+; In: BC = sprite y. Out: DE = x of a tree on the left shore edge at that y. Keeps BC.
+ShoreEdgeX:
+	LD HL,-96
+	ADD HL,BC
+	SRA H
+	RR L ; The edge slides left 1 px per 2 px down
+	EX DE,HL
+	LD HL,SHORE_EDGE_X-TREE_INSET
+	OR A
+	SBC HL,DE
+	EX DE,HL
 	RET
 
 BuildPlayerSprite:
@@ -621,6 +849,27 @@ SegDrawList:
 
 Frame:
 	DEFB 0
+	DEFC SHORE_EDGE_X = 88 ; Sprite x of the left shore edge at sprite y 96, where the water starts
+	DEFC TREE_INSET = 16 ; How far inland of the edge a tree stands
+	DEFC SHORE_FIRST_ROW = 5 ; First background row with water and land
+	DEFC SHORE_ROWS = 9
+	DEFC SHORE_LAND_COLS = 5 ; Columns on the left of each row that differ from open water
+ShoreSides:
+	DEFB 0xff	; Bit 0 = shore on the left, bit 1 = on the right; 0xff forces the first rebuild
+ShoreDX:
+	DEFW 0
+ShoreDY:
+	DEFW 0
+ShoreMirror:
+	DEFB 0
+ShoreCount:
+	DEFB 0
+ShoreSrc:
+	DEFW 0
+ShoreWater:
+	DEFB 0
+ShoreRowsLeft:
+	DEFB 0
 ShoreDistance:
 	DEFB 0	; cm travelled towards the next shore step
 	DEFC SHORE_CM_PER_STEP = MAX_SPEED>>8 ; One step per frame at top speed
@@ -651,6 +900,12 @@ SpriteTileMap:
 	defw 0xffff
 	defb 0
 	dw TileMapHud
+	defw 0xffff
+	defb 0
+	defw TileMapShore ; Second copy of the shore sprites, mirrored for a right shore
+	defw 0xffff
+	defb 0
+	defw TileMapSky ; Second copy of the sky sprites, mirrored and drawn over the right shore
 	defw 0xffff
 	defb 0
 	defw TileMapSprites

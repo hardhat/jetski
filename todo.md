@@ -3,7 +3,7 @@
 ## Known Issues (from reviewing `main.asm` and the running build)
 - [x] Player boat scale and centring: scale selection now maps nearer (larger `y`) to larger sprites, and the player is centred at `SpriteCenterX` (176) — verify in emulator
 - [x] `BuildCourseSegmentSprites` now passes DE = x, BC = y, and accumulates distance across segments (`SegDist`) instead of using each segment's own length — verify tree scaling in emulator
-- [ ] Tree placement tests flag bits 0/1 as "curve right/left"; real flags are `HAS_RAMP=1`, `HAS_OBSTACLE_L=2`, `HAS_OBSTACLE_R=4`, `SLOWZONE=8`, `SHORE_L=16`, `SHORE_R=32`
+- [x] Tree placement now uses `SHORE_L` / `SHORE_R` and stands on the shore edge (`ShoreEdgeX`) — tune `SHORE_EDGE_X` / `TREE_INSET` in the emulator
 - [x] End-of-course check uses the 16-bit segment index and keeps the remainder when looping
 - [x] Segment-end test loops, so one frame can cross several short segments
 - [X] `ElapsedTimeFrames` is declared `DEFB` but accessed as a word, overwriting the byte after it (`WorldPosX`)
@@ -30,7 +30,7 @@
 - [x] Water gradient + sky/mountains tilemaps
 - [x] Shore tiles converted to sprites and animated
 - [x] Tie shore scroll rate to player velocity (stop when stationary)
-- [ ] Choose left/right shore per segment (`SHORE_L` / `SHORE_R`)
+- [x] Choose left/right shore per segment (`SHORE_L` / `SHORE_R`) — verify in emulator
 - [ ] Align horizon constant with the sky/water boundary
 - [X] Shift sky/mountains horizontally on curves
 - [ ] Optional: water motion via palette animation
