@@ -4,6 +4,7 @@
 	DEFC BREAK = 150
 	DEFC MAX_SPEED = 46*256	; in 8.8 fixed-point cm/frame (about 100 km/h)
 	DEFC MOUNTAIN_PERIOD = 320*64	; The mountain tilemap repeats every 320 px
+	DEFC LATERAL_LIMIT = 1000*16	; Furthest the boat can get from the segment centre, in 1/16 cm
 
 UpdatePhysics:
 	; Update the physics of the game here, including player movement, collision detection, etc. 
@@ -37,11 +38,14 @@ DoneSpeedUpdate:
 	EX DE,HL ; DE = velocity
 	LD E,D
 	LD D,0	; We only care about the whole part of the velocity for movement, so we can ignore the fractional part in D.
-	; For now, ignore steering and just move forward based on the velocity
+	; Move forward based on the velocity
 	LD HL,(WorldPosZ)
 	ADD HL,DE
 	LD (WorldPosZ),HL
+	PUSH DE
 	CALL UpdateMountainScroll ; DE = distance travelled this frame
+	POP DE
+	CALL UpdateLateralPosition
 	; Look for end of segment; loop since one frame can cross several short segments
 CheckSegmentEnd:
 	LD HL,(Segment)
@@ -72,8 +76,6 @@ SegmentIndexSet:
 	LD (Segment),HL
 	JR CheckSegmentEnd
 DoneSegmentCheck:
-	; TODO steering and curve handling
-
 	; Update elapsed time
 	LD HL,(ElapsedTimeFrames)
 	INC HL
@@ -89,6 +91,118 @@ DoneSegmentCheck:
 	LD (ElapsedTime),HL
 DoneTimeUpdate:
 
+	RET
+
+; Slides the boat sideways: steering scales with speed, and the segment's curve pushes it outward.
+; WorldPosXFine is in 1/16 cm, positive to the right; WorldPosX is its whole-cm part.
+UpdateLateralPosition:
+	LD HL,(Velocity)
+	ADD HL,HL
+	LD L,H
+	LD H,0 ; Steering speed: velocity/128 in 1/16 cm, i.e. an eighth of the forward speed
+	LD BC,(Steer)
+	LD A,B
+	OR C
+	JR Z,@NoSteer
+	BIT 7,B
+	JR Z,@SteerDone
+	XOR A
+	SUB L
+	LD L,A
+	SBC A,A
+	SUB H
+	LD H,A
+	JR @SteerDone
+@NoSteer:
+	LD HL,0
+@SteerDone:
+	PUSH HL
+	LD HL,(Segment)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	LD BC,(CourseSegmentPtr)
+	ADD HL,BC
+	LD A,(HL) ; curve
+	OR A
+	JR Z,@NoDrift
+	INC HL
+	LD C,(HL)
+	INC HL
+	LD B,(HL)
+	PUSH BC ; segment length
+	LD C,A ; keep the sign of the curve
+	JP P,@DriftAbs
+	NEG
+@DriftAbs:
+	PUSH BC
+	LD DE,(Velocity)
+	LD E,D
+	LD D,0 ; DE = dz
+	CALL DE_Times_A ; A:HL = dz * |curve|
+	EX DE,HL
+	LD A,(Velocity+1)
+	CALL DE_Times_A ; A:HL = dz^2 * |curve|
+	ADD HL,HL
+	RLA ; x2 gives 4x the physical outward drift (|curve|*dz^2/(8*length) cm), in 1/16 cm
+	POP DE ; E = signed curve
+	POP BC ; BC = segment length
+	PUSH DE
+	CALL Div24_16
+	POP DE
+	LD A,E
+	OR A
+	JP P,@DriftSigned ; Positive curve is a left turn, which throws the boat to the right
+	XOR A
+	SUB L
+	LD L,A
+	SBC A,A
+	SUB H
+	LD H,A
+@DriftSigned:
+	POP DE ; steering
+	ADD HL,DE
+	JR @ApplyLateral
+@NoDrift:
+	POP HL
+@ApplyLateral:
+	LD DE,(WorldPosXFine)
+	ADD HL,DE
+	LD DE,LATERAL_LIMIT
+	OR A
+	SBC HL,DE
+	BIT 7,H
+	JR NZ,@BelowMax
+	LD HL,0 ; Clamp to +limit
+@BelowMax:
+	ADD HL,DE
+	ADD HL,DE ; HL + limit is negative only below -limit
+	BIT 7,H
+	JR Z,@AboveMin
+	LD HL,0 ; Clamp to -limit
+@AboveMin:
+	OR A
+	SBC HL,DE
+	LD (WorldPosXFine),HL
+	LD B,4
+@LateralDown:
+	SRA H
+	RR L
+	DJNZ @LateralDown
+	LD (WorldPosX),HL
+	RET
+
+; Out: HL = velocity in km/h. 60 frames/s * 0.036 km/h per cm/s = 2.16 km/h per cm/frame, approximated as 69/8192 of the 8.8 velocity.
+VelocityToKmh:
+	LD DE,(Velocity)
+	LD A,69
+	CALL DE_Times_A
+	LD L,H
+	LD H,A
+	LD B,5
+@KmhShift:
+	SRL H
+	RR L
+	DJNZ @KmhShift
 	RET
 
 ; Pans the mountains by the heading change over the current segment: curve/32 rad * 208 px/rad, in 1/64 px.
@@ -171,7 +285,9 @@ ElapsedTime:
 ElapsedTimeFrames:
 	DEFW 0	; in frames, for sub-second timing
 WorldPosX:
-	DEFW 0	; from center of segment, in cm
+	DEFW 0	; from center of segment, in cm, positive to the right
+WorldPosXFine:
+	DEFW 0	; WorldPosX in 1/16 cm
 WorldPosZ:
 	DEFW 0	; from beginning of segment, in cm
 Yaw:

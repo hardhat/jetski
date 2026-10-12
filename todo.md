@@ -47,13 +47,13 @@
 
 ## Phase 4: Player Physics
 - [x] Throttle acceleration, coast, brake, max speed (8.8 fixed point)
-- [ ] Apply `Steer` to `WorldPosX` with speed-dependent turning
-- [ ] Apply segment `curve` as lateral/yaw drift
-- [ ] Use `Yaw` / `sine_88` if a heading model is needed
+- [x] Apply `Steer` to `WorldPosX` with speed-dependent turning
+- [x] Apply segment `curve` as lateral/yaw drift
+- [x] Use `Yaw` / `sine_88` if a heading model is needed (not needed: lateral model works without a heading)
 - [ ] Track edge detection and slow-down zone speed reduction
 - [ ] Obstacle collision + speed penalty
 - [ ] Boost state (duration, decay)
-- [ ] Convert velocity to km/h for display
+- [x] Convert velocity to km/h for display
 - [ ] Tune constants (`ACCELERATION`, `COAST`, `BREAK`, `MAX_SPEED`)
 
 ## Phase 5: Perspective Sprites

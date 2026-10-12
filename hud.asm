@@ -1,5 +1,7 @@
 ; HUD / debug overlay and decimal printing into the layer 0 tilemap
+	DEFC HUD_SPEED_TILE = 7*8+4 ; Tile byte of the first speed digit: hud sprite 7, after the 7 in the top row
 UpdateHud:
+	CALL UpdateHudSpeed
 	; Set cursor position to top left corner at the beginning of the mapped page 2 memory 0x8000
 	LD DE,MappedMem+80+Layer0Offset ; 80 is the offset to the second row of the tilemap, so we can write numbers in the top left corner without worrying about the status bar
 	LD (Cursor),DE
@@ -51,9 +53,7 @@ UpdateHud:
 	INC DE
 	LD (Cursor),DE
 
-	LD HL,(Velocity)
-	LD L,H ;show only the whole part
-	LD H,0
+	CALL VelocityToKmh
 	CALL PrintDec99
 
 	;Second line of output
@@ -103,6 +103,29 @@ UpdateHud:
 
 ;HudMsg:
 ;	DEFB ">Hello: 12/3",0
+
+; Writes the speed in km/h into the three digit sprites in the bottom-left corner.
+UpdateHudSpeed:
+	CALL VelocityToKmh
+	LD IX,(SpriteTileMap+12) ; First hud sprite
+	LD D,100
+	CALL Div_HL_D
+	LD E,A
+	LD A,L
+	ADD A,192
+	LD (IX+HUD_SPEED_TILE),A
+	LD L,E
+	LD H,0
+	LD D,10
+	CALL Div_HL_D
+	LD E,A
+	LD A,L
+	ADD A,192
+	LD (IX+HUD_SPEED_TILE+8),A
+	LD A,E
+	ADD A,192
+	LD (IX+HUD_SPEED_TILE+16),A
+	RET
 
 ; void plotLine(int x0, int y0, int x1, int y1)
 ; {
