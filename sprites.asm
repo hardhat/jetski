@@ -517,6 +517,7 @@ BuildCourseSegmentSprites:
 	DEC C
 	JR NZ,@CollectLoop
 @CollectDone:
+	CALL BuildCurveTable
 	CALL BuildMarkerSprites
 
 	LD A,(SegDrawCount)
@@ -538,33 +539,24 @@ BuildCourseSegmentSprites:
 	PUSH BC
 	LD B,D
 	LD C,E ; BC = z distance to the end of this segment
-	; Add prespective
-	; HORIZON=64 pixels, Y_WORLD=120 cm above horizon, DIST=208 (75 degree FOV), SCALE=35 for 1.0x scale
-	; int y = HORIZON + (Y_WORLD * DIST * SCALE) / z; // Perspective: far → near horizon, near → bottom
-	LD HL,0x5480 ; screen center x postion
-	LD A, 0xD ; Y_WORLD * DIST * SCALE = 120*208*35 = 873600 = 0xD5480, so we start with the high byte of that value in A
-	CALL Div24_16 ; Divide by z (in BC) to get the perspective y value, result in HL
-	LD DE,64
-	ADD HL,DE ; Add the horizon value to get the final y position in screen coordinates
-	EX DE,HL ; DE = y position in screen coordinates
 	POP AF
 	PUSH AF ; Get the flags into A
 	; Trees stand beside the track on each side the segment flags mark as shore
-	LD B,D
-	LD C,E ; BC = y position
 	BIT 4,A ; SHORE_L
 	JR Z,@NoLeftTree
 	PUSH AF
 	PUSH BC
 	LD HL,-TREE_LATERAL
-	CALL AddTree
+	LD DE,TreeSpriteList
+	CALL AddGroundSprite
 	POP BC
 	POP AF
 @NoLeftTree:
 	BIT 5,A ; SHORE_R
 	JR Z,@NoRightTree
 	LD HL,TREE_LATERAL
-	CALL AddTree
+	LD DE,TreeSpriteList
+	CALL AddGroundSprite
 @NoRightTree:
 	; Next segment
 	POP BC
@@ -599,53 +591,343 @@ BuildMarkerSprites:
 
 ; In: BC = distance ahead in cm.
 AddMarkerPair:
-	LD HL,MARKER_MIN_Z
+	PUSH BC
+	LD HL,-TRACK_HALF_WIDTH
+	LD DE,BuoySpriteList
+	CALL AddGroundSprite
+	POP BC
+	LD HL,TRACK_HALF_WIDTH
+	LD DE,BuoySpriteList
+
+; In: BC = distance ahead in cm, HL = lateral position in cm from the track centre, DE = composite sprite list.
+AddGroundSprite:
+	PUSH DE
+	CALL ProjectGround
+	POP HL
+	RET C
+	XOR A ; No shear
+	JP AddScaledCompositeSprite
+
+; In: BC = distance ahead in cm, HL = lateral position in cm from the track centre.
+; Out: DE = x, BC = y in sprite coordinates; carry set if it is off screen.
+ProjectGround:
+	LD A,B
+	OR C
+	SCF
+	RET Z
+	PUSH HL
+	PUSH BC
+	CALL CurveAtZ
+	EX DE,HL
+	POP BC
+	POP HL
 	OR A
-	SBC HL,BC
-	RET NC ; Too close: it would be below the screen
+	SBC HL,DE ; The track centre has moved left by the curve shift
+	PUSH HL
+	; HORIZON=64 pixels, Y_WORLD=120 cm above horizon, DIST=208 (75 degree FOV), SCALE=35 for 1.0x scale
+	; y = HORIZON + (Y_WORLD * DIST * SCALE) / z, and 120*208*35 = 0xD5480
 	LD HL,0x5480
 	LD A,0xD
-	CALL Div24_16 ; HL = 120*208*35/z, the pixels below the horizon
+	CALL Div24_16 ; HL = pixels below the horizon
+	OR H
+	JR NZ,@Far
 	LD A,L
-	LD (MarkerH),A
 	LD H,0
 	LD DE,64
 	ADD HL,DE
-	LD (MarkerY),HL
-	LD HL,-TRACK_HALF_WIDTH
-	CALL AddMarker
-	LD HL,TRACK_HALF_WIDTH
-
-; In: HL = lateral position of the buoy from the track centre in cm; MarkerH and MarkerY set.
-; The screen offset is lateral * (y - horizon) / 120, as for a point on the ground seen from 120 cm up.
-AddMarker:
-	LD A,(MarkerH)
-	CALL LateralToScreenX
-	RET C
-	LD BC,(MarkerY)
-	LD HL,BuoySpriteList
-	XOR A ; No shear
-	JP AddScaledCompositeSprite
-
-; In: BC = sprite y, HL = lateral position in cm from the track centre. Adds a tree there unless it is off screen.
-AddTree:
-	PUSH HL
-	LD HL,-64
-	ADD HL,BC
-	LD A,H
-	OR A
-	JR NZ,@Far
-	LD A,L ; Pixels below the horizon
-	POP HL
-	PUSH BC
+	EX (SP),HL ; Stack = y, HL = lateral
 	CALL LateralToScreenX
 	POP BC
-	RET C
-	LD HL,TreeSpriteList
-	XOR A ; No shear
-	JP AddScaledCompositeSprite
+	RET
 @Far:
 	POP HL
+	SCF
+	RET
+
+; Fills SegCurve with the end distance and sideways shift of the track centre for each listed segment.
+; The shift is in cm with a gain of 1/8 folded in, positive when the track has moved left, and follows
+; the heading of the track (8.8 radians, from the segment curve values) relative to the camera.
+BuildCurveTable:
+	LD A,(SegDrawCount)
+	OR A
+	RET Z
+	LD (CurveLeft),A
+	LD HL,0
+	LD (CurveTheta),HL
+	LD (CurveC),HL
+	LD HL,(Segment)
+	LD (CurveSeg),HL
+	LD HL,SegCurve
+	LD (CurvePtr),HL
+	LD HL,SegDrawList
+	LD (CurveListPtr),HL
+	LD A,1
+	LD (CurveFirst),A
+@Next:
+	LD HL,(CurveSeg)
+	ADD HL,HL
+	ADD HL,HL ; HL = segment*4 { int8_t curve; int16_t length; uint8_t flags; }
+	LD DE,(CourseSegmentPtr)
+	ADD HL,DE
+	LD A,(HL)
+	LD (CurveVal),A
+	INC HL
+	LD C,(HL)
+	INC HL
+	LD B,(HL) ; BC = segment length
+	LD HL,(CurveListPtr)
+	LD E,(HL)
+	INC HL
+	LD D,(HL) ; DE = distance to the end of this segment
+	INC HL
+	INC HL ; Skip the flags
+	LD (CurveListPtr),HL
+	LD HL,(CurvePtr)
+	LD (HL),E
+	INC HL
+	LD (HL),D
+	INC HL
+	LD (CurvePtr),HL
+	LD A,(CurveFirst)
+	OR A
+	JR Z,@FullSegment
+	XOR A
+	LD (CurveFirst),A
+	; Only the part of the first segment ahead of the player counts: l = DE, q = l/length in 8.8
+	LD (CurveL),DE
+	LD H,D
+	LD L,E
+	LD A,H
+	LD H,L
+	LD L,0 ; A:HL = l * 256
+	CALL Div24_16
+	LD (CurveQ),HL
+	LD B,H
+	LD C,L
+	LD DE,(CurveL)
+	CALL BC_Times_DE ; HL = q * l / 256 = l^2 / length
+	LD (CurveM),HL
+	JR @Terms
+@FullSegment:
+	LD (CurveL),BC
+	LD (CurveM),BC
+	LD HL,256
+	LD (CurveQ),HL
+@Terms:
+	; Shift from the heading on entry: theta * l / 256 / 8
+	LD HL,(CurveTheta)
+	LD A,H
+	PUSH AF
+	BIT 7,H
+	CALL NZ,NegHL
+	LD B,H
+	LD C,L
+	LD DE,(CurveL)
+	CALL BC_Times_DE ; B:HL:A = |theta| * l
+	LD A,B
+	OR A
+	JR Z,@NoSat
+	LD HL,0x7FFF
+@NoSat:
+	SRL H
+	RR L
+	SRL H
+	RR L
+	SRL H
+	RR L
+	POP AF
+	BIT 7,A
+	CALL NZ,NegHL
+	PUSH HL
+	; Shift from turning within the segment: curve/32 rad * l^2 / length / 2, so |curve| * m / 512
+	LD A,(CurveVal)
+	OR A
+	JP P,@AbsCurve1
+	NEG
+@AbsCurve1:
+	LD DE,(CurveM)
+	CALL DE_Times_A
+	LD L,H
+	LD H,A
+	SRL H
+	RR L
+	LD A,(CurveVal)
+	OR A
+	CALL M,NegHL
+	POP DE
+	LD (CurveT1),DE
+	ADD HL,DE
+	LD DE,(CurveC)
+	ADD HL,DE
+	LD (CurveC),HL
+	EX DE,HL
+	LD HL,(CurvePtr)
+	LD (HL),E
+	INC HL
+	LD (HL),D
+	INC HL
+	LD DE,(CurveT1)
+	LD (HL),E
+	INC HL
+	LD (HL),D
+	INC HL
+	LD (CurvePtr),HL
+	; Heading change over the part counted: curve * 8 * q / 256 in 8.8 radians
+	LD A,(CurveVal)
+	OR A
+	JP P,@AbsCurve2
+	NEG
+@AbsCurve2:
+	LD DE,(CurveQ)
+	CALL DE_Times_A
+	LD B,5
+@ThetaShift:
+	SRL H
+	RR L
+	DJNZ @ThetaShift
+	LD A,(CurveVal)
+	OR A
+	CALL M,NegHL
+	LD DE,(CurveTheta)
+	ADD HL,DE
+	LD (CurveTheta),HL
+	LD HL,(CurveSeg)
+	INC HL
+	LD DE,(CourseSegmentCount)
+	PUSH HL
+	OR A
+	SBC HL,DE
+	POP HL
+	JR C,@SegSet
+	LD HL,0 ; Wrap around to the start of the course
+@SegSet:
+	LD (CurveSeg),HL
+	LD A,(CurveLeft)
+	DEC A
+	LD (CurveLeft),A
+	JP NZ,@Next
+	RET
+
+; In: BC = distance ahead in cm. Out: HL = sideways shift of the track centre there, positive to the left.
+; Within a segment the shift follows C0 + T1*f + (C1 - C0 - T1)*f^2: T1 is the shift from the heading on entry,
+; so a bend eases in from the heading it started with. f is the fraction of the segment, 0..1.
+CurveAtZ:
+	LD A,(SegDrawCount)
+	OR A
+	JR Z,@None
+	LD (CurveLeft),A
+	LD HL,0
+	LD (CurveZ0),HL
+	LD (CurveC0),HL
+	LD HL,SegCurve
+@Scan:
+	LD E,(HL)
+	INC HL
+	LD D,(HL)
+	INC HL
+	LD (CurveZ1),DE
+	PUSH HL
+	EX DE,HL
+	OR A
+	SBC HL,BC
+	JR NC,@Found
+	POP HL
+	LD E,(HL)
+	INC HL
+	LD D,(HL)
+	INC HL
+	INC HL
+	INC HL ; Skip T1
+	LD (CurveC0),DE
+	LD DE,(CurveZ1)
+	LD (CurveZ0),DE
+	LD A,(CurveLeft)
+	DEC A
+	LD (CurveLeft),A
+	JR NZ,@Scan
+@None:
+	LD HL,(CurveC0) ; Beyond the last listed segment, or nothing listed
+	RET
+@Found:
+	POP HL
+	LD E,(HL)
+	INC HL
+	LD D,(HL) ; DE = shift at the end of this segment
+	INC HL
+	LD A,(HL)
+	INC HL
+	LD H,(HL)
+	LD L,A
+	LD (CurveT1),HL
+	PUSH DE
+	LD HL,(CurveZ1)
+	LD DE,(CurveZ0)
+	OR A
+	SBC HL,DE ; HL = segment length ahead of the previous end
+	LD A,H
+	OR L
+	JR Z,@ZeroLength
+	PUSH HL
+	LD H,B
+	LD L,C
+	OR A
+	SBC HL,DE ; HL = distance into the segment
+	LD A,H
+	LD H,L
+	LD L,0 ; A:HL = distance * 256
+	POP BC
+	CALL Div24_16 ; HL = f in 8.8
+	LD (CurveF),HL
+	LD B,H
+	LD C,L
+	LD D,H
+	LD E,L
+	CALL BC_Times_DE ; HL = f^2 in 8.8
+	LD (CurveF2),HL
+	POP HL
+	LD DE,(CurveC0)
+	OR A
+	SBC HL,DE
+	LD DE,(CurveT1)
+	OR A
+	SBC HL,DE ; HL = C1 - C0 - T1
+	LD DE,(CurveF2)
+	CALL ScaleFrac
+	PUSH HL
+	LD HL,(CurveT1)
+	LD DE,(CurveF)
+	CALL ScaleFrac
+	POP DE
+	ADD HL,DE
+	LD DE,(CurveC0)
+	ADD HL,DE
+	RET
+@ZeroLength:
+	POP DE
+	LD HL,(CurveC0)
+	RET
+
+; In: HL = signed value, DE = fraction 0..256 in 8.8. Out: HL = HL * DE / 256.
+ScaleFrac:
+	LD A,H
+	PUSH AF
+	BIT 7,H
+	CALL NZ,NegHL
+	LD B,H
+	LD C,L
+	CALL BC_Times_DE
+	POP AF
+	BIT 7,A
+	CALL NZ,NegHL
+	RET
+
+NegHL:
+	XOR A
+	SUB L
+	LD L,A
+	SBC A,A
+	SUB H
+	LD H,A
 	RET
 
 ; Projects a point on the ground beside the track: screen offset = (lateral - WorldPosX) * pixels below the horizon / LATERAL_DIV.
@@ -969,15 +1251,46 @@ ShoreCount:
 	DEFC TRACK_HALF_WIDTH = 200 ; Buoys stand this far either side of the track centre, in cm
 	DEFC TREE_LATERAL = 300 ; Trees stand this far from the track centre, beyond the buoys
 	DEFC LATERAL_DIV = 320 ; 200 cm lands 100 px from the centre at the boat's row
-	DEFC MARKER_COUNT = 6 ; Buoys per side that are in range at once
-	DEFC MARKER_MIN_Z = 3500 ; Closer than this the buoy is below the screen
+	DEFC MARKER_COUNT = 12 ; Buoys per side that are in range at once
 MarkerZ:
 	DEFW 0
 MarkerLeft:
 	DEFB 0
-MarkerH:
+SegCurve:
+	DS 5*6 ; Per listed segment: end distance, sideways shift at its end, shift from the entry heading (words)
+CurveTheta:
+	DEFW 0
+CurveC:
+	DEFW 0
+CurveSeg:
+	DEFW 0
+CurvePtr:
+	DEFW 0
+CurveListPtr:
+	DEFW 0
+CurveLeft:
 	DEFB 0
-MarkerY:
+CurveFirst:
+	DEFB 0
+CurveVal:
+	DEFB 0
+CurveL:
+	DEFW 0
+CurveQ:
+	DEFW 0
+CurveM:
+	DEFW 0
+CurveZ0:
+	DEFW 0
+CurveZ1:
+	DEFW 0
+CurveC0:
+	DEFW 0
+CurveT1:
+	DEFW 0
+CurveF:
+	DEFW 0
+CurveF2:
 	DEFW 0
 ShoreSrc:
 	DEFW 0

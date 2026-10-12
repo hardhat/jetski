@@ -24,6 +24,7 @@
 	extern Div24_16
 	extern Div_HL_D
 	extern DE_Times_A
+	extern BC_Times_DE
 
 	org 0x4000
 

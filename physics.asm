@@ -5,7 +5,7 @@
 	DEFC MAX_SPEED = 46*256	; in 8.8 fixed-point cm/frame (about 100 km/h)
 	DEFC MOUNTAIN_PERIOD = 320*64	; The mountain tilemap repeats every 320 px
 	DEFC LATERAL_LIMIT = 1000*16	; Furthest the boat can get from the segment centre, in 1/16 cm
-	DEFC MARKER_SPACING = 5000	; Distance between track buoys, in cm
+	DEFC MARKER_SPACING = 1500	; Distance between track buoys, in cm
 
 UpdatePhysics:
 	; Update the physics of the game here, including player movement, collision detection, etc. 
