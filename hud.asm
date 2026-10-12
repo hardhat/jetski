@@ -96,6 +96,15 @@ UpdateHud:
 	CALL Div_HL_D ; move to 100ths of a second: Frames*100/60
 	CALL PrintDec99 ; Print frames as 2 digit number
 
+	LD DE,(Cursor)
+	LD A,192+10 ;':'
+	LD (DE),A
+	INC DE
+	LD (Cursor),DE
+	LD HL,(WorldPosX)
+	LD DE,1000 ; There is no minus tile, so 1000 is the track centre
+	ADD HL,DE
+	CALL PrintDec16
 	; LD HL,HudMsg
 	; CALL PrintString
 

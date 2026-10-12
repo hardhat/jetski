@@ -3,7 +3,7 @@
 ## Known Issues (from reviewing `main.asm` and the running build)
 - [x] Player boat scale and centring: scale selection now maps nearer (larger `y`) to larger sprites, and the player is centred at `SpriteCenterX` (176) — verify in emulator
 - [x] `BuildCourseSegmentSprites` now passes DE = x, BC = y, and accumulates distance across segments (`SegDist`) instead of using each segment's own length — verify tree scaling in emulator
-- [x] Tree placement now uses `SHORE_L` / `SHORE_R` and stands on the shore edge (`ShoreEdgeX`) — tune `SHORE_EDGE_X` / `TREE_INSET` in the emulator
+- [x] Trees (`TREE_LATERAL`) and buoys (`TRACK_HALF_WIDTH`) share one ground projection (`LateralToScreenX`, tune `LATERAL_DIV`); land is hidden (`SHOW_LAND`) until x scroll per scanline works — verify in emulator
 - [x] End-of-course check uses the 16-bit segment index and keeps the remainder when looping
 - [x] Segment-end test loops, so one frame can cross several short segments
 - [X] `ElapsedTimeFrames` is declared `DEFB` but accessed as a word, overwriting the byte after it (`WorldPosX`)

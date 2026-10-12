@@ -172,7 +172,7 @@ UpdateShoreSides:
 	RRCA
 	RRCA
 	RRCA
-	AND 3 ; bit 0 = shore on the left, bit 1 = on the right
+	AND SHOW_LAND*3 ; bit 0 = shore on the left, bit 1 = on the right
 	LD B,A
 	LD A,(ShoreSides)
 	CP B
@@ -549,30 +549,22 @@ BuildCourseSegmentSprites:
 	EX DE,HL ; DE = y position in screen coordinates
 	POP AF
 	PUSH AF ; Get the flags into A
-	; Trees stand on the shore edge, on each side the segment flags mark as shore
+	; Trees stand beside the track on each side the segment flags mark as shore
 	LD B,D
 	LD C,E ; BC = y position
 	BIT 4,A ; SHORE_L
 	JR Z,@NoLeftTree
 	PUSH AF
-	CALL ShoreEdgeX
-	LD HL,TreeSpriteList
-	XOR A ; No shear
 	PUSH BC
-	CALL AddScaledCompositeSprite
+	LD HL,-TREE_LATERAL
+	CALL AddTree
 	POP BC
 	POP AF
 @NoLeftTree:
 	BIT 5,A ; SHORE_R
 	JR Z,@NoRightTree
-	CALL ShoreEdgeX
-	LD HL,SpriteCenterX*2 ; Mirror the left edge about the screen centre
-	OR A
-	SBC HL,DE
-	EX DE,HL
-	LD HL,TreeSpriteList
-	XOR A ; No shear
-	CALL AddScaledCompositeSprite
+	LD HL,TREE_LATERAL
+	CALL AddTree
 @NoRightTree:
 	; Next segment
 	POP BC
@@ -581,7 +573,7 @@ BuildCourseSegmentSprites:
 
 	RET
 
-; Buoys mark both edges of the track every MARKER_SPACING cm, except on sides that have a shore.
+; Buoys mark both edges of the track every MARKER_SPACING cm.
 BuildMarkerSprites:
 	LD HL,(MarkerPhase)
 	EX DE,HL
@@ -620,26 +612,52 @@ AddMarkerPair:
 	LD DE,64
 	ADD HL,DE
 	LD (MarkerY),HL
-	CALL FlagsAtZ
-	LD (MarkerFlags),A
-	BIT 4,A ; SHORE_L
-	JR NZ,@NoLeft
 	LD HL,-TRACK_HALF_WIDTH
 	CALL AddMarker
-@NoLeft:
-	LD A,(MarkerFlags)
-	BIT 5,A ; SHORE_R
-	RET NZ
 	LD HL,TRACK_HALF_WIDTH
 
 ; In: HL = lateral position of the buoy from the track centre in cm; MarkerH and MarkerY set.
 ; The screen offset is lateral * (y - horizon) / 120, as for a point on the ground seen from 120 cm up.
 AddMarker:
+	LD A,(MarkerH)
+	CALL LateralToScreenX
+	RET C
+	LD BC,(MarkerY)
+	LD HL,BuoySpriteList
+	XOR A ; No shear
+	JP AddScaledCompositeSprite
+
+; In: BC = sprite y, HL = lateral position in cm from the track centre. Adds a tree there unless it is off screen.
+AddTree:
+	PUSH HL
+	LD HL,-64
+	ADD HL,BC
+	LD A,H
+	OR A
+	JR NZ,@Far
+	LD A,L ; Pixels below the horizon
+	POP HL
+	PUSH BC
+	CALL LateralToScreenX
+	POP BC
+	RET C
+	LD HL,TreeSpriteList
+	XOR A ; No shear
+	JP AddScaledCompositeSprite
+@Far:
+	POP HL
+	RET
+
+; Projects a point on the ground beside the track: screen offset = (lateral - WorldPosX) * pixels below the horizon / LATERAL_DIV.
+; In: HL = lateral position in cm from the track centre, A = pixels below the horizon (0-255).
+; Out: DE = x in sprite coordinates; carry set if it is off the side of the screen.
+LateralToScreenX:
+	LD B,A
 	LD DE,(WorldPosX)
 	OR A
 	SBC HL,DE
-	LD A,H
-	PUSH AF ; Sign of the offset
+	LD C,H ; Sign of the offset
+	PUSH BC
 	BIT 7,H
 	JR Z,@Positive
 	XOR A
@@ -650,20 +668,19 @@ AddMarker:
 	LD H,A
 @Positive:
 	EX DE,HL
-	LD A,(MarkerH)
+	LD A,B
 	CALL DE_Times_A
-	LD BC,120
+	LD BC,LATERAL_DIV
 	CALL Div24_16
-	POP AF
-	LD B,A
+	POP BC
 	LD A,H
 	OR A
-	RET NZ ; Off the side of the screen
+	JR NZ,@OffScreen
 	LD A,L
 	CP 200
-	RET NC
+	JR NC,@OffScreen
 	LD DE,SpriteCenterX
-	BIT 7,B
+	BIT 7,C
 	JR NZ,@Left
 	ADD HL,DE
 	JR @HaveX
@@ -673,47 +690,10 @@ AddMarker:
 	SBC HL,DE
 @HaveX:
 	EX DE,HL
-	LD BC,(MarkerY)
-	LD HL,BuoySpriteList
-	XOR A ; No shear
-	JP AddScaledCompositeSprite
-
-; In: BC = distance ahead in cm. Out: A = flags of the segment that distance falls in, or of the last one listed.
-FlagsAtZ:
-	LD A,(SegDrawCount)
 	OR A
-	RET Z
-	LD IXL,A
-	LD HL,SegDrawList
-@Scan:
-	LD E,(HL)
-	INC HL
-	LD D,(HL)
-	INC HL
-	EX DE,HL
-	OR A
-	SBC HL,BC ; Carry if the segment ends before this distance
-	EX DE,HL
-	JR NC,@Found
-	INC HL
-	DEC IXL
-	JR NZ,@Scan
-	DEC HL
-@Found:
-	LD A,(HL)
 	RET
-
-; In: BC = sprite y. Out: DE = x of a tree on the left shore edge at that y. Keeps BC.
-ShoreEdgeX:
-	LD HL,-96
-	ADD HL,BC
-	SRA H
-	RR L ; The edge slides left 1 px per 2 px down
-	EX DE,HL
-	LD HL,SHORE_EDGE_X-TREE_INSET
-	OR A
-	SBC HL,DE
-	EX DE,HL
+@OffScreen:
+	SCF
 	RET
 
 BuildPlayerSprite:
@@ -972,9 +952,8 @@ SegDrawList:
 
 Frame:
 	DEFB 0
-	DEFC SHORE_EDGE_X = 88 ; Sprite x of the left shore edge at sprite y 96, where the water starts
-	DEFC TREE_INSET = 16 ; How far inland of the edge a tree stands
 	DEFC SHORE_FIRST_ROW = 5 ; First background row with water and land
+	DEFC SHOW_LAND = 0 ; Land stays hidden until x scroll per scanline works in emulation
 	DEFC SHORE_ROWS = 9
 	DEFC SHORE_LAND_COLS = 5 ; Columns on the left of each row that differ from open water
 ShoreSides:
@@ -988,6 +967,8 @@ ShoreMirror:
 ShoreCount:
 	DEFB 0
 	DEFC TRACK_HALF_WIDTH = 200 ; Buoys stand this far either side of the track centre, in cm
+	DEFC TREE_LATERAL = 300 ; Trees stand this far from the track centre, beyond the buoys
+	DEFC LATERAL_DIV = 320 ; 200 cm lands 100 px from the centre at the boat's row
 	DEFC MARKER_COUNT = 6 ; Buoys per side that are in range at once
 	DEFC MARKER_MIN_Z = 3500 ; Closer than this the buoy is below the screen
 MarkerZ:
@@ -998,8 +979,6 @@ MarkerH:
 	DEFB 0
 MarkerY:
 	DEFW 0
-MarkerFlags:
-	DEFB 0
 ShoreSrc:
 	DEFW 0
 ShoreWater:
