@@ -517,6 +517,7 @@ BuildCourseSegmentSprites:
 	DEC C
 	JR NZ,@CollectLoop
 @CollectDone:
+	CALL BuildMarkerSprites
 
 	LD A,(SegDrawCount)
 	OR A
@@ -578,6 +579,128 @@ BuildCourseSegmentSprites:
 	DEC C
 	JP NZ,@DrawLoop
 
+	RET
+
+; Buoys mark both edges of the track every MARKER_SPACING cm, except on sides that have a shore.
+BuildMarkerSprites:
+	LD HL,(MarkerPhase)
+	EX DE,HL
+	LD HL,MARKER_SPACING*MARKER_COUNT
+	OR A
+	SBC HL,DE
+	LD (MarkerZ),HL ; Start with the farthest so nearer buoys are drawn in front
+	LD A,MARKER_COUNT
+	LD (MarkerLeft),A
+@Marker:
+	LD BC,(MarkerZ)
+	CALL AddMarkerPair
+	LD HL,(MarkerZ)
+	LD DE,MARKER_SPACING
+	OR A
+	SBC HL,DE
+	LD (MarkerZ),HL
+	LD A,(MarkerLeft)
+	DEC A
+	LD (MarkerLeft),A
+	JR NZ,@Marker
+	RET
+
+; In: BC = distance ahead in cm.
+AddMarkerPair:
+	LD HL,MARKER_MIN_Z
+	OR A
+	SBC HL,BC
+	RET NC ; Too close: it would be below the screen
+	LD HL,0x5480
+	LD A,0xD
+	CALL Div24_16 ; HL = 120*208*35/z, the pixels below the horizon
+	LD A,L
+	LD (MarkerH),A
+	LD H,0
+	LD DE,64
+	ADD HL,DE
+	LD (MarkerY),HL
+	CALL FlagsAtZ
+	LD (MarkerFlags),A
+	BIT 4,A ; SHORE_L
+	JR NZ,@NoLeft
+	LD HL,-TRACK_HALF_WIDTH
+	CALL AddMarker
+@NoLeft:
+	LD A,(MarkerFlags)
+	BIT 5,A ; SHORE_R
+	RET NZ
+	LD HL,TRACK_HALF_WIDTH
+
+; In: HL = lateral position of the buoy from the track centre in cm; MarkerH and MarkerY set.
+; The screen offset is lateral * (y - horizon) / 120, as for a point on the ground seen from 120 cm up.
+AddMarker:
+	LD DE,(WorldPosX)
+	OR A
+	SBC HL,DE
+	LD A,H
+	PUSH AF ; Sign of the offset
+	BIT 7,H
+	JR Z,@Positive
+	XOR A
+	SUB L
+	LD L,A
+	SBC A,A
+	SUB H
+	LD H,A
+@Positive:
+	EX DE,HL
+	LD A,(MarkerH)
+	CALL DE_Times_A
+	LD BC,120
+	CALL Div24_16
+	POP AF
+	LD B,A
+	LD A,H
+	OR A
+	RET NZ ; Off the side of the screen
+	LD A,L
+	CP 200
+	RET NC
+	LD DE,SpriteCenterX
+	BIT 7,B
+	JR NZ,@Left
+	ADD HL,DE
+	JR @HaveX
+@Left:
+	EX DE,HL
+	OR A
+	SBC HL,DE
+@HaveX:
+	EX DE,HL
+	LD BC,(MarkerY)
+	LD HL,BuoySpriteList
+	XOR A ; No shear
+	JP AddScaledCompositeSprite
+
+; In: BC = distance ahead in cm. Out: A = flags of the segment that distance falls in, or of the last one listed.
+FlagsAtZ:
+	LD A,(SegDrawCount)
+	OR A
+	RET Z
+	LD IXL,A
+	LD HL,SegDrawList
+@Scan:
+	LD E,(HL)
+	INC HL
+	LD D,(HL)
+	INC HL
+	EX DE,HL
+	OR A
+	SBC HL,BC ; Carry if the segment ends before this distance
+	EX DE,HL
+	JR NC,@Found
+	INC HL
+	DEC IXL
+	JR NZ,@Scan
+	DEC HL
+@Found:
+	LD A,(HL)
 	RET
 
 ; In: BC = sprite y. Out: DE = x of a tree on the left shore edge at that y. Keeps BC.
@@ -863,6 +986,19 @@ ShoreDY:
 ShoreMirror:
 	DEFB 0
 ShoreCount:
+	DEFB 0
+	DEFC TRACK_HALF_WIDTH = 200 ; Buoys stand this far either side of the track centre, in cm
+	DEFC MARKER_COUNT = 6 ; Buoys per side that are in range at once
+	DEFC MARKER_MIN_Z = 3500 ; Closer than this the buoy is below the screen
+MarkerZ:
+	DEFW 0
+MarkerLeft:
+	DEFB 0
+MarkerH:
+	DEFB 0
+MarkerY:
+	DEFW 0
+MarkerFlags:
 	DEFB 0
 ShoreSrc:
 	DEFW 0

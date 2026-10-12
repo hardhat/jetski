@@ -66,7 +66,7 @@
 - [ ] Z-order: far objects first, player and near objects in front
 - [ ] Obstacle sprite sets (rocks, logs)
 - [ ] Ramp scale table (tiles 160–191)
-- [ ] Trackside flag/buoy markers at regular intervals
+- [x] Trackside flag/buoy markers at regular intervals — verify in emulator
 - [ ] Player sprite: 4×4 at bottom centre, lean levels, flip for right lean
 - [ ] Verify per-scanline sprite limits on hardware/emulator
 

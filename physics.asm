@@ -5,6 +5,7 @@
 	DEFC MAX_SPEED = 46*256	; in 8.8 fixed-point cm/frame (about 100 km/h)
 	DEFC MOUNTAIN_PERIOD = 320*64	; The mountain tilemap repeats every 320 px
 	DEFC LATERAL_LIMIT = 1000*16	; Furthest the boat can get from the segment centre, in 1/16 cm
+	DEFC MARKER_SPACING = 5000	; Distance between track buoys, in cm
 
 UpdatePhysics:
 	; Update the physics of the game here, including player movement, collision detection, etc. 
@@ -42,6 +43,15 @@ DoneSpeedUpdate:
 	LD HL,(WorldPosZ)
 	ADD HL,DE
 	LD (WorldPosZ),HL
+	LD HL,(MarkerPhase)
+	ADD HL,DE
+	LD BC,MARKER_SPACING
+	OR A
+	SBC HL,BC
+	JR NC,MarkerPhaseSet
+	ADD HL,BC
+MarkerPhaseSet:
+	LD (MarkerPhase),HL
 	PUSH DE
 	CALL UpdateMountainScroll ; DE = distance travelled this frame
 	POP DE
@@ -288,6 +298,8 @@ WorldPosX:
 	DEFW 0	; from center of segment, in cm, positive to the right
 WorldPosXFine:
 	DEFW 0	; WorldPosX in 1/16 cm
+MarkerPhase:
+	DEFW 0	; Distance travelled since the last buoy position, in cm
 WorldPosZ:
 	DEFW 0	; from beginning of segment, in cm
 Yaw:
